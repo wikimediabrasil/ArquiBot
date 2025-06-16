@@ -1,0 +1,80 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Arquibot Statistics</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="stylesheet" href="{% static 'archivebot/css/style.css' %}">
+</head>
+<body>
+  <button id="theme-toggle">Toggle Theme</button>
+  <h1>Arquibot Statistics</h1>
+
+  <label for="date-filter">Filter by date:</label>
+  <input type="date" id="date-filter">
+
+  <table>
+    <thead>
+      <tr>
+        <th>Date</th>
+        <th>Articles Scanned</th>
+        <th>URLs Checked</th>
+        <th>URLs Archived</th>
+        <th>Edits Made</th>
+      </tr>
+    </thead>
+    <tbody id="stats-body"></tbody>
+  </table>
+
+  <script>
+    // Load stats from API
+    async function loadStats() {
+      const res = await fetch("/api/botstats/");
+      const data = await res.json();
+      const body = document.getElementById("stats-body");
+      body.innerHTML = "";
+      data.forEach(item => {
+        const tr = document.createElement("tr");
+        tr.innerHTML = `<td>${new Date(item.run_date).toLocaleString()}</td>
+                        <td>${item.articles_scanned}</td>
+                        <td>${item.urls_checked}</td>
+                        <td>${item.urls_archived}</td>
+                        <td>${item.edits_made}</td>`;
+        body.appendChild(tr);
+      });
+    }
+
+    // Detect system theme and set if no preference is saved
+    function detectSystemTheme() {
+      if (!localStorage.getItem("theme")) {
+        const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+        localStorage.setItem("theme", prefersDark ? "dark" : "light");
+      }
+    }
+
+    // Load theme preference from localStorage
+    function applyThemePreference() {
+      const theme = localStorage.getItem("theme");
+      if (theme === "dark") {
+        document.body.classList.add("dark-theme");
+      } else {
+        document.body.classList.remove("dark-theme");
+      }
+    }
+
+    // Toggle theme manually
+    document.getElementById("theme-toggle").addEventListener("click", () => {
+      const isDark = document.body.classList.toggle("dark-theme");
+      localStorage.setItem("theme", isDark ? "dark" : "light");
+    });
+
+    // Initialize everything
+    document.addEventListener("DOMContentLoaded", () => {
+      detectSystemTheme();
+      applyThemePreference();
+      loadStats();
+    });
+  </script>
+</body>
+</html>

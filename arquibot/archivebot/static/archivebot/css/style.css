@@ -1,0 +1,97 @@
+/* Light theme variables */
+:root {
+  --bg-color: #ffffff;
+  --text-color: #222222;
+  --table-header: #f2f2f2;
+  --border-color: #dddddd;
+}
+
+/* Dark theme variables */
+.dark-theme {
+  --bg-color: #1e1e1e;
+  --text-color: #f9f9f9;
+  --table-header: #2e2e2e;
+  --border-color: #444444;
+}
+
+body {
+  font-family: system-ui, sans-serif;
+  background-color: var(--bg-color);
+  color: var(--text-color);
+  margin: 0;
+  padding: 1rem;
+}
+
+h1 {
+  text-align: center;
+  margin-bottom: 1rem;
+}
+
+#theme-toggle {
+  position: absolute;
+  top: 1rem;
+  right: 1rem;
+  padding: 0.5rem 1rem;
+  border: none;
+  background: var(--table-header);
+  cursor: pointer;
+  border-radius: 5px;
+}
+
+label,
+input[type="date"] {
+  display: block;
+  margin: 1rem auto;
+  text-align: center;
+  font-size: 1rem;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 1rem auto;
+  max-width: 100%;
+}
+
+thead {
+  background-color: var(--table-header);
+}
+
+th, td {
+  padding: 0.75rem;
+  text-align: center;
+  border: 1px solid var(--border-color);
+}
+
+tr:nth-child(even) {
+  background-color: #f9f9f9;
+}
+
+.dark-theme tr:nth-child(even) {
+  background-color: #2b2b2b;
+}
+
+@media (max-width: 600px) {
+  table, thead, tbody, th, td, tr {
+    display: block;
+  }
+
+  thead {
+    display: none;
+  }
+
+  td {
+    position: relative;
+    padding-left: 50%;
+    text-align: left;
+    border: none;
+    border-bottom: 1px solid var(--border-color);
+  }
+
+  td::before {
+    content: attr(data-label);
+    position: absolute;
+    left: 1rem;
+    font-weight: bold;
+  }
+}
