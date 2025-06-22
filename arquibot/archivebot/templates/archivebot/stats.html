@@ -24,7 +24,19 @@
         <th>Edits Made</th>
       </tr>
     </thead>
-    <tbody id="stats-body"></tbody>
+    <tbody id="stats-body">
+      {% for stat in stats %}
+      <tr>
+        <td>{{ stat.date }}</td>
+        <td>{{ stat.articles }}</td>
+        <td>{{ stat.urls_checked }}</td>
+        <td>{{ stat.urls_archived }}</td>
+        <td>{{ stat.edits_made }}</td>
+      </tr>
+      {% empty %}
+      <tr><td colspan="5">No data available.</td></tr>
+      {% endfor %}
+  </tbody>
   </table>
 
   <script>
