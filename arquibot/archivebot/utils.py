@@ -1,11 +1,11 @@
 import os
 import requests
-from waybackpy import WaybackMachineSaveAPI
-from datetime import timedelta
-import logging
 import re
-
+import logging
+from datetime import timedelta, timezone
 from django.utils.timezone import now
+
+from waybackpy import WaybackMachineSaveAPI
 from .models import ArchiveLog, BotRunStats
 
 # Setup logging
@@ -21,9 +21,11 @@ logging.basicConfig(
 WIKIPEDIA_API_URL = "https://pt.wikipedia.org/w/api.php"
 
 def get_recent_changes(last_hours=24):
-    """Fetch recent changes on ptwiki in the past 24 hours (no limit)."""
-    rcend = now()
+    """Fetch recent changes on ptwiki in the past N hours."""
+    rcend = now().astimezone(timezone.utc)
     rcstart = rcend - timedelta(hours=last_hours)
+
+    logging.info(f"Fetching changes from {rcstart} to {rcend}")
 
     params = {
         "action": "query",
@@ -55,9 +57,9 @@ def get_recent_changes(last_hours=24):
         else:
             break
 
-    logging.info(f"📄 Number of articles fetched: {len(titles)}")
+    logging.info(f"Number of articles fetched: {len(titles)}")
     if not titles:
-        logging.warning("⚠️ No recent changes found. Try using a wider time range or checking API status.")
+        logging.warning("No recent changes found. Try using a wider time range or checking API status.")
 
     return list(titles)
 
@@ -75,8 +77,8 @@ def get_article_content(title):
     return next(iter(pages.values())).get("revisions", [{}])[0].get("*", "")
 
 def extract_citar_web_urls(text):
-    """Extract only URLs with {{citar web}} templates using regex."""
-    return re.findall(r'\{\{citar\s+web[^\}]*?url\s*=\s*(https?://[^\|\s\}]+)', text, re.IGNORECASE)
+    """Extract only URLs inside {{citar web}} templates using regex."""
+    return re.findall(r'\{\{[Cc]itar\s+web[^\}]*?url\s*=\s*(https?://[^\|\s\}]+)', text)
 
 def is_url_alive(url, timeout=10):
     """Check if a URL is alive by sending a HEAD request."""
@@ -90,32 +92,32 @@ def archive_url(url):
     """Archive a URL using the Wayback Machine."""
     try:
         save_api = WaybackMachineSaveAPI(
-            url, 
+            url,
             user_agent="ptwiki-archivebot/1.0 (https://pt.wikipedia.org/wiki/User:YourBotUsername)"
         )
         archive = save_api.save()
-        logging.info(f"✅ Archived: {url} → {archive.archive_url}")
+        logging.info(f"Archived: {url} → {archive.archive_url}")
         return archive.archive_url
     except Exception as e:
-        logging.error(f"❌ Failed to archive {url}: {e}")
+        logging.error(f"Failed to archive {url}: {e}")
         return None
 
 def run_archive_bot():
     """Main archive bot runner for ptwiki using {{citar web}}."""
-    logging.info("🟢 Bot started.")
-    titles = get_recent_changes(last_hours=24)
+    logging.info("Bot started.")
+    titles = get_recent_changes(last_hours=24 * 7)  # Scan past 7 days for testing
 
     unique_articles = set()
     total_urls = 0
     archived_count = 0
 
     for title in titles:
-        logging.info(f"🔍 Checking article: {title}")
+        logging.info(f"Checking article: {title}")
         content = get_article_content(title)
         urls = extract_citar_web_urls(content)
 
         if not urls:
-            logging.info(f"📭 No citar web URLs found in: {title}")
+            logging.info(f"No citar web URLs found in: {title}")
             continue
 
         unique_articles.add(title)
@@ -143,7 +145,7 @@ def run_archive_bot():
                     timestamp=now()
                 )
             except Exception as e:
-                logging.warning(f"⚠️ Could not save log to DB: {e}")
+                logging.warning(f"Could not save log to DB: {e}")
 
     # Save daily summary to BotRunStats
     today = now().date()
@@ -158,8 +160,8 @@ def run_archive_bot():
                     'edits_made': len(unique_articles)
                 }
             )
-            logging.info("📊 BotRunStats updated.")
+            logging.info("BotRunStats updated.")
         except Exception as e:
-            logging.warning(f"⚠️ Failed to update BotRunStats: {e}")
+            logging.warning(f"Failed to update BotRunStats: {e}")
 
-    logging.info("✅ Bot finished.")
+    logging.info("Bot finished.")
