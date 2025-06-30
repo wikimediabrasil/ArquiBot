@@ -1,109 +1,75 @@
-import os
 import requests
 import re
 import logging
 import time
-from datetime import timedelta, timezone
+from bs4 import BeautifulSoup
 from django.utils.timezone import now
-from urllib.parse import quote
+from datetime import timedelta
 from waybackpy import WaybackMachineSaveAPI
 from .models import ArchiveLog, BotRunStats
 
-# Setup logging
-BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-log_path = os.path.join(BASE_DIR, 'archivebot.log')
-
 logging.basicConfig(
-    filename=log_path,
     level=logging.INFO,
     format='%(asctime)s %(levelname)s: %(message)s',
+    handlers=[
+        logging.FileHandler('archivebot.log', encoding='utf-8'),
+        logging.StreamHandler()  # logs to console
+    ]
 )
 
 WIKIPEDIA_API_URL = "https://pt.wikipedia.org/w/api.php"
 
-def get_recent_changes(last_hours=24):
-    rcend = now().astimezone(timezone.utc)
-    rcstart = rcend - timedelta(hours=last_hours)
-
-    logging.info(f"Fetching changes from {rcstart} to {rcend}")
-
-    params = {
-        "action": "query",
-        "format": "json",
-        "list": "recentchanges",
-        "rcnamespace": 0,
-        "rctype": "edit|new",
-        "rcprop": "title|ids|timestamp",
-        "rcstart": rcend.isoformat(),
-        "rcend": rcstart.isoformat(),
-        "rclimit": "max",
-    }
-
-    changes = []
-    rccontinue = None
-
-    while True:
-        if rccontinue:
-            params['rccontinue'] = rccontinue
-
-        response = requests.get(WIKIPEDIA_API_URL, params=params)
-        logging.info(f"Recentchanges API URL: {response.url}")
-        data = response.json()
-
-        changes.extend(data.get("query", {}).get("recentchanges", []))
-
-        if "continue" in data:
-            rccontinue = data["continue"].get("rccontinue")
-        else:
-            break
-
-    logging.info(f"Total recent changes fetched: {len(changes)}")
-    return changes
-
-
-def get_articles_with_full_revision_info(titles):
-    """
-    Fetch detailed revision info (including slots->main content) for multiple titles.
-    Returns the raw API response JSON as-is.
-    """
-    if not titles:
-        return {}
+def get_recent_changes_with_diff(grclimit=10, last_hours=1):
+    """Fetch recent changes with diffs using generator=recentchanges and rvdiffto=prev."""
+    end_time = now().astimezone()
+    start_time = end_time - timedelta(hours=last_hours)
 
     params = {
         "action": "query",
         "format": "json",
-        "formatversion": 2,
+        "generator": "recentchanges",
+        "grcnamespace": 0,
+        "grclimit": grclimit,
+        "grcshow": "!bot",
+        "grcstart": end_time.isoformat(),
+        "grcend": start_time.isoformat(),
         "prop": "revisions",
-        "rvslots": "main",
         "rvprop": "ids|timestamp|user|comment|content",
-        "titles": "|".join(titles),
+        "rvdiffto": "prev",
     }
-    response = requests.get(WIKIPEDIA_API_URL, params=params)
-    logging.info(f"Revisions API URL: {response.url}")
-    return response.json()
 
+    response = requests.get(WIKIPEDIA_API_URL, params=params)
+    data = response.json()
+    pages = data.get("query", {}).get("pages", {})
+    return pages.values()
+
+def extract_inserted_text_from_diff(diff_html):
+    """Parse diff HTML and extract inserted text."""
+    if not diff_html:
+        return ""
+    soup = BeautifulSoup(diff_html, "html.parser")
+    inserted_texts = [ins.get_text() for ins in soup.find_all("ins")]
+    return "\n".join(inserted_texts)
 
 def extract_citar_web_urls(text):
-    """Extract URLs only from {{citar web ... url=...}} templates."""
-    return re.findall(r'\{\{[Cc]itar\s+web[^\}]*?url\s*=\s*(https?://[^\|\s\}]+)', text)
-
+    """Extract URLs from citar web templates in inserted text."""
+    pattern = re.compile(r'\{\{[Cc]itar\s+web.*?\|.*?[Uu][Rr][Ll]\s*=\s*(https?://[^\|\}\s]+)', re.DOTALL)
+    return [match.group(1) for match in pattern.finditer(text)]
 
 def is_url_alive(url, timeout=10):
     try:
         response = requests.head(url, allow_redirects=True, timeout=timeout)
+        logging.info(f"Checked URL {url}, status code: {response.status_code}")
         return response.status_code == 200
-    except requests.RequestException:
+    except requests.RequestException as e:
+        logging.warning(f"URL check failed for {url}: {e}")
         return False
 
-
 def archive_url(url):
+    """Try to archive a URL once, with detailed logging."""
     logging.info(f"Attempting to archive URL: {url}")
 
-    if not is_url_alive(url):
-        logging.warning(f"Skipping dead or unreachable URL: {url}")
-        return None
-
-    time.sleep(1)  # avoid hammering Wayback Machine
+    time.sleep(1) # Wait 1 second before archiving to avoid overwhelming Wayback server
 
     try:
         save_api = WaybackMachineSaveAPI(
@@ -111,103 +77,100 @@ def archive_url(url):
             user_agent="ptwiki-archivebot/1.0 (https://pt.wikipedia.org/wiki/User:YourBotUsername)"
         )
         archive = save_api.save()
-        logging.info(f"Archived with waybackpy: {url} → {archive.archive_url}")
-        return archive.archive_url
-    except Exception as e:
-        logging.error(f"Waybackpy archiving failed for {url}: {e}")
-
-    # Fallback to direct HTTP GET on archive.org save endpoint
-    try:
-        fallback_url = "https://web.archive.org/save/" + quote(url, safe="")
-        headers = {
-            "User-Agent": "ptwiki-archivebot/1.0 (https://pt.wikipedia.org/wiki/User:YourBotUsername)"
-        }
-        fallback_response = requests.get(fallback_url, headers=headers, timeout=15)
-        if fallback_response.status_code in [200, 302]:
-            logging.info(f"Fallback archived: {url} → {fallback_url}")
-            return fallback_url
+        if hasattr(archive, "archive_url") and archive.archive_url:
+            logging.info(f"Archived via WaybackPy: {url} → {archive.archive_url}")
+            return archive.archive_url
         else:
-            logging.warning(f"Fallback archiving failed for {url} with status {fallback_response.status_code}")
+            logging.warning(f"WaybackPy returned no archive_url for {url}")
     except Exception as e:
-        logging.error(f"Exception during fallback archiving for {url}: {e}")
+        logging.error(f"WaybackPy failed for {url}: {e}")
+
+    # Fallback to check if URL already archived
+    try:
+        logging.info(f"Trying fallback Wayback availability API for: {url}")
+        availability_resp = requests.get("https://archive.org/wayback/available", params={"url": url}, timeout=15)
+        data = availability_resp.json()
+        snapshot = data.get("archived_snapshots", {}).get("closest", {})
+        if snapshot.get("available"):
+            archive_url = snapshot.get("url")
+            logging.info(f"Found existing archive: {url} → {archive_url}")
+            return archive_url
+        else:
+            logging.warning(f"No archive found for: {url}")
+    except Exception as e:
+        logging.error(f"Exception in fallback availability API for {url}: {e}")
 
     return None
 
-
 def run_archive_bot():
     logging.info("Archive Bot started.")
-    changes = get_recent_changes(last_hours=24 * 7)
 
-    # Gather unique titles from recent changes
-    titles = list({change["title"] for change in changes})
+    recent_changes = get_recent_changes_with_diff(grclimit=50, last_hours=1)
 
-    batch_size = 50  # max titles per API request
     unique_articles = set()
     total_urls = 0
     archived_count = 0
+    real_edits_made = 0
 
-    for i in range(0, len(titles), batch_size):
-        batch = titles[i:i + batch_size]
-        rev_data = get_articles_with_full_revision_info(batch)
-        pages = rev_data.get("query", {}).get("pages", [])
+    for page in recent_changes:
+        title = page.get("title")
+        revisions = page.get("revisions", [])
+        if not title or not revisions:
+            continue
 
-        for page in pages:
-            title = page.get("title")
-            unique_articles.add(title)
+        unique_articles.add(title)
 
-            revisions = page.get("revisions", [])
-            if not revisions:
-                logging.info(f"No revisions found for {title}")
-                continue
+        rev = revisions[0]
+        diff_html = rev.get("diff", {}).get("*", "")
+        inserted_content = extract_inserted_text_from_diff(diff_html)
 
-            # Get latest revision content
-            content = revisions[0].get("slots", {}).get("main", {}).get("*", "")
-            urls = extract_citar_web_urls(content)
+        if not inserted_content.strip():
+            logging.info(f"No inserted content in {title}")
+            continue
 
-            if not urls:
-                logging.info(f"No citar web URLs found in latest revision of {title}")
-                continue
+        real_edits_made += 1
 
-            for url in urls:
-                total_urls += 1
+        urls = extract_citar_web_urls(inserted_content)
+        if not urls:
+            logging.info(f"No citar web URLs found in inserted content for {title}")
+            continue
 
-                if is_url_alive(url):
-                    archive_link = archive_url(url)
-                    status = "archived" if archive_link else "failed"
-                    message = archive_link or "Archiving failed"
-                    if archive_link:
-                        archived_count += 1
-                else:
-                    archive_link = None
-                    status = "skipped"
-                    message = "Dead link — not archived"
+        for url in urls:
+            total_urls += 1
+            if is_url_alive(url):
+                archive_link = archive_url(url)
+                status = "archived" if archive_link else "failed"
+                message = archive_link or "Archiving failed"
+                if archive_link:
+                    archived_count += 1
+            else:
+                archive_link = None
+                status = "skipped"
+                message = "Dead link — not archived"
 
-                try:
-                    ArchiveLog.objects.create(
-                        url=url,
-                        article_title=title,
-                        status=status,
-                        message=message,
-                        timestamp=now()
-                    )
-                except Exception as e:
-                    logging.warning(f"Failed to save ArchiveLog: {e}")
+            try:
+                ArchiveLog.objects.create(
+                    url=url,
+                    article_title=title,
+                    status=status,
+                    message=message,
+                    timestamp=now()
+                )
+            except Exception as e:
+                logging.warning(f"Failed to save ArchiveLog for {url} ({title}): {e}")
 
-    # Update BotRunStats
-    today = now().date()
-    if total_urls > 0:
-        try:
-            BotRunStats.objects.update_or_create(
-                run_date=today,
-                defaults={
-                    'articles_scanned': len(unique_articles),
-                    'urls_checked': total_urls,
-                    'urls_archived': archived_count,
-                    'edits_made': len(unique_articles)
-                }
-            )
-            logging.info("BotRunStats updated.")
-        except Exception as e:
-            logging.warning(f"Failed to update BotRunStats: {e}")
+    try:
+        BotRunStats.objects.update_or_create(
+            run_date=now(),
+            defaults={
+                'articles_scanned': len(unique_articles),
+                'urls_checked': total_urls,
+                'urls_archived': archived_count,
+                'edits_made': real_edits_made,
+            }
+        )
+        logging.info(f"BotRunStats saved: Articles: {len(unique_articles)}, URLs checked: {total_urls}, URLs archived: {archived_count}, Real edits: {real_edits_made}")
+    except Exception as e:
+        logging.error(f"Failed to save BotRunStats: {e}")
 
     logging.info("Archive Bot finished.")

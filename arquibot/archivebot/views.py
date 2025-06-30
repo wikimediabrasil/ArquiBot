@@ -25,16 +25,13 @@ def combined_stats_api(request):
 
 def stats_page(request):
     today = now().date()
-    start_date = today - timedelta(days=6)  # last 7 days
+    start_date = today - timedelta(days=6)
 
     logs = ArchiveLog.objects.filter(timestamp__date__gte=start_date)
-
-    # Group by date
     stats = defaultdict(lambda: {
         'articles': set(),
         'urls_checked': 0,
         'urls_archived': 0,
-        'edits_made': 0  # optional, you can decide how to define this
     })
 
     for log in logs:
@@ -43,10 +40,12 @@ def stats_page(request):
         stats[date_key]['urls_checked'] += 1
         if log.status == 'archived':
             stats[date_key]['urls_archived'] += 1
-        # Optional: count each article scanned as an edit
-        stats[date_key]['edits_made'] = len(stats[date_key]['articles'])
 
-    # Convert sets to counts
+    # Pull accurate edits_made from BotRunStats model
+    stats_model_qs = BotRunStats.objects.filter(run_date__date__gte=start_date)
+    edits_by_date = {s.run_date.date(): s.edits_made for s in stats_model_qs}
+
+    # Build final list
     final_stats = []
     for date in sorted(stats.keys(), reverse=True):
         stat = stats[date]
@@ -55,7 +54,7 @@ def stats_page(request):
             'articles': len(stat['articles']),
             'urls_checked': stat['urls_checked'],
             'urls_archived': stat['urls_archived'],
-            'edits_made': stat['edits_made'],
+            'edits_made': edits_by_date.get(date, 0), 
         })
 
     return render(request, 'archivebot/stats.html', {'stats': final_stats})
