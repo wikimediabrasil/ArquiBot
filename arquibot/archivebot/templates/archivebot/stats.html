@@ -8,7 +8,15 @@
   <link rel="stylesheet" href="{% static 'archivebot/css/style.css' %}" />
 </head>
 <body>
-  <button id="theme-toggle">Toggle Theme</button>
+  <div class="toggle-container">
+    <label class="switch">
+      <input type="checkbox" id="theme-toggle" />
+      <span class="slider round">
+        <span class="icon sun" aria-label="Light theme">🌕</span>
+        <span class="icon moon" aria-label="Dark theme">🌑</span>
+      </span>
+    </label>
+  </div>
   <h1>Arquibot Statistics</h1>
 
   <label for="date-filter">Filter by date:</label>

@@ -6,7 +6,7 @@ from bs4 import BeautifulSoup
 from django.utils.timezone import now
 from datetime import timedelta
 from waybackpy import WaybackMachineSaveAPI
-from .models import ArchiveLog, BotRunStats
+from .models import ArchiveLog, BotRunStats, ArchivedCitation
 
 logging.basicConfig(
     level=logging.INFO,
@@ -69,7 +69,7 @@ def archive_url(url):
     """Try to archive a URL once, with detailed logging."""
     logging.info(f"Attempting to archive URL: {url}")
 
-    time.sleep(1) # Wait 1 second before archiving to avoid overwhelming Wayback server
+    # time.sleep()
 
     try:
         save_api = WaybackMachineSaveAPI(
@@ -101,6 +101,61 @@ def archive_url(url):
         logging.error(f"Exception in fallback availability API for {url}: {e}")
 
     return None
+
+def extract_citar_web_templates(text):
+    """Extract full {{citar web}} template strings from text."""
+    pattern = re.compile(r'(\{\{[Cc]itar\s+web.*?\}\})', re.DOTALL)
+    return pattern.findall(text)
+
+def parse_citar_template(template):
+    """Extract fields from citar web template as a dictionary."""
+    fields = {}
+    parts = template.strip('{}').split('|')[1:]  # remove '{{' and '}}', skip 'citar web'
+    for part in parts:
+        if '=' in part:
+            key, val = part.split('=', 1)
+            fields[key.strip().lower()] = val.strip()
+    return fields
+
+def build_updated_template(fields):
+    """Rebuild a citar web template string from fields."""
+    parts = ['{{citar web']
+    for k, v in fields.items():
+        parts.append(f'{k}={v}')
+    parts.append('}}')
+    return '|'.join(parts)
+
+def process_citation_template(title, template_str, archive_url, archive_date, url_is_dead=False):
+    fields = parse_citar_template(template_str)
+    if 'arquivourl' in fields or 'wayb' in fields:
+        logging.info(f"Skipping {title}: Template already has arquivourl or wayb")
+        return None
+
+    fields['arquivourl'] = archive_url
+    fields['arquivodata'] = archive_date.strftime('%Y-%m-%d')
+    if url_is_dead:
+        fields['urlmorta'] = 'sim'
+    elif 'urlmorta' in fields:
+        # Remove urlmorta if present and URL is alive
+        del fields['urlmorta']
+
+    updated = build_updated_template(fields)
+
+    try:
+        ArchivedCitation.objects.create(
+            article_title=title,
+            original_template=template_str,
+            updated_template=updated,
+            url=fields.get('url', ''),
+            arquivourl=archive_url,
+            arquivodata=archive_date,
+            urlmorta=url_is_dead
+        )
+        logging.info(f"Saved ArchivedCitation for {title}")
+    except Exception as e:
+        logging.warning(f"Failed to save ArchivedCitation for {title}: {e}")
+
+    return updated
 
 def run_archive_bot():
     logging.info("Archive Bot started.")
@@ -143,10 +198,18 @@ def run_archive_bot():
                 message = archive_link or "Archiving failed"
                 if archive_link:
                     archived_count += 1
+                    templates = extract_citar_web_templates(inserted_content)
+                    for tmpl in templates:
+                        if url in tmpl:
+                            process_citation_template(title, tmpl, archive_link, now().date(), url_is_dead=False)
             else:
                 archive_link = None
                 status = "skipped"
                 message = "Dead link — not archived"
+                templates = extract_citar_web_templates(inserted_content)
+                for tmpl in templates:
+                    if url in tmpl:
+                        process_citation_template(title, tmpl, None, now().date(), url_is_dead=True)
 
             try:
                 ArchiveLog.objects.create(

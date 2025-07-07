@@ -14,6 +14,7 @@
   --border-color: #444444;
 }
 
+/* Global styles */
 body {
   font-family: system-ui, sans-serif;
   background-color: var(--bg-color);
@@ -27,17 +28,78 @@ h1 {
   margin-bottom: 1rem;
 }
 
-#theme-toggle {
+/* Toggle container aligned top-right */
+.toggle-container {
   position: absolute;
   top: 1rem;
   right: 1rem;
   padding: 0.5rem 1rem;
-  border: none;
-  background: var(--table-header);
+  background-color: var(--bg-color, #fff);
   cursor: pointer;
-  border-radius: 5px;
+  border: none;
 }
 
+/* Switch styling */
+.switch {
+  position: relative;
+  display: inline-block;
+  width: 60px;
+  height: 34px;
+}
+
+.switch input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.slider {
+  position: absolute;
+  cursor: pointer;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background-color: #ccc;
+  border-radius: 35px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 6px;
+  transition: background-color 0.4s;
+  font-size: 18px;
+}
+
+.slider::before {
+  content: "";
+  position: absolute;
+  height: 26px;
+  width: 26px;
+  left: 4px;
+  bottom: 4px;
+  background-color: white;
+  border-radius: 50%;
+  transition: 0.4s;
+  z-index: 2;
+}
+
+input:checked + .slider {
+  background-color: #000;
+}
+
+input:checked + .slider::before {
+  transform: translateX(26px);
+}
+
+/* Emoji colors */
+.slider .icon.sun {
+  color: #FFD700; /* gold/yellow */
+  z-index: 1;
+}
+
+.slider .icon.moon {
+  color: #000000; /* black */
+  z-index: 1;
+}
+
+/* Labels and date input centered */
 label,
 input[type="date"] {
   display: block;
@@ -46,11 +108,12 @@ input[type="date"] {
   font-size: 1rem;
 }
 
+/* Table styles */
 table {
   width: 100%;
+  max-width: 100%;
   border-collapse: collapse;
   margin: 1rem auto;
-  max-width: 100%;
 }
 
 thead {
@@ -63,6 +126,7 @@ th, td {
   border: 1px solid var(--border-color);
 }
 
+/* Alternate row background */
 tr:nth-child(even) {
   background-color: #f9f9f9;
 }
@@ -71,6 +135,7 @@ tr:nth-child(even) {
   background-color: #2b2b2b;
 }
 
+/* Responsive table for small screens */
 @media (max-width: 600px) {
   table, thead, tbody, th, td, tr {
     display: block;

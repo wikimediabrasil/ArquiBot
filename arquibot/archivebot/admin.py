@@ -1,6 +1,6 @@
 from django.contrib import admin
 from django.utils.html import format_html
-from .models import ArchiveLog, BotRunStats
+from .models import ArchiveLog, BotRunStats, ArchivedCitation
 
 @admin.register(ArchiveLog)
 class ArchiveLogAdmin(admin.ModelAdmin):
@@ -22,3 +22,9 @@ class ArchiveLogAdmin(admin.ModelAdmin):
 class BotRunStatsAdmin(admin.ModelAdmin):
     list_display = ('run_date', 'articles_scanned', 'urls_checked', 'urls_archived', 'edits_made')
     list_filter = ('run_date',)
+
+@admin.register(ArchivedCitation)
+class ArchivedCitationAdmin(admin.ModelAdmin):
+    search_fields = ['article_title', 'url']
+    list_filter = ['urlmorta', 'timestamp']
+    list_display = ['article_title', 'url', 'urlmorta', 'arquivourl', 'arquivodata', 'timestamp']

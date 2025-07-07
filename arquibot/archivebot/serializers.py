@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import ArchiveLog, BotRunStats
+from .models import ArchiveLog, BotRunStats, ArchivedCitation
 
 class ArchiveLogSerializer(serializers.ModelSerializer):
     class Meta:
@@ -11,3 +11,7 @@ class BotRunStatsSerializer(serializers.ModelSerializer):
         model = BotRunStats
         fields = '__all__'
 
+class ArchivedCitationSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = ArchivedCitation
+        fields = '__all__'

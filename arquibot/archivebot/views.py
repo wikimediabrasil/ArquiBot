@@ -4,9 +4,10 @@ from rest_framework.response import Response
 from django.db.models import Count
 from django.utils.timezone import now, timedelta
 from collections import defaultdict
-from datetime import datetime
-from .models import ArchiveLog, BotRunStats
-from .serializers import ArchiveLogSerializer, BotRunStatsSerializer
+from .models import ArchiveLog, BotRunStats, ArchivedCitation
+from .serializers import ArchiveLogSerializer, BotRunStatsSerializer, ArchivedCitationSerializer
+from rest_framework import generics
+
 
 @api_view(['GET'])
 def combined_stats_api(request):
@@ -58,3 +59,7 @@ def stats_page(request):
         })
 
     return render(request, 'archivebot/stats.html', {'stats': final_stats})
+
+class ArchivedCitationList(generics.ListAPIView):
+    queryset = ArchivedCitation.objects.all().order_by('-timestamp')
+    serializer_class = ArchivedCitationSerializer
