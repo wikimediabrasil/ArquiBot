@@ -1,11 +1,11 @@
 import requests
-import re
 import logging
-import time
+import traceback
 from bs4 import BeautifulSoup
 from django.utils.timezone import now
 from datetime import timedelta
 from waybackpy import WaybackMachineSaveAPI
+import mwparserfromhell
 from .models import ArchiveLog, BotRunStats, ArchivedCitation
 
 logging.basicConfig(
@@ -19,7 +19,7 @@ logging.basicConfig(
 
 WIKIPEDIA_API_URL = "https://pt.wikipedia.org/w/api.php"
 
-def get_recent_changes_with_diff(grclimit=10, last_hours=1):
+def get_recent_changes_with_diff(grclimit=50, last_hours=2):
     """Fetch recent changes with diffs using generator=recentchanges and rvdiffto=prev."""
     end_time = now().astimezone()
     start_time = end_time - timedelta(hours=last_hours)
@@ -51,12 +51,16 @@ def extract_inserted_text_from_diff(diff_html):
     inserted_texts = [ins.get_text() for ins in soup.find_all("ins")]
     return "\n".join(inserted_texts)
 
-def extract_citar_web_urls(text):
-    """Extract URLs from citar web templates in inserted text."""
-    pattern = re.compile(r'\{\{[Cc]itar\s+web.*?\|.*?[Uu][Rr][Ll]\s*=\s*(https?://[^\|\}\s]+)', re.DOTALL)
-    return [match.group(1) for match in pattern.finditer(text)]
+def extract_citar_templates_mwparser(wikitext):
+    """Use mwparserfromhell to extract all citar templates"""
+    wikicode = mwparserfromhell.parse(wikitext)
+    return [
+        template for template in wikicode.filter_templates()
+        if template.name.strip().lower().startswith("citar ")
+    ]
 
-def is_url_alive(url, timeout=10):
+def is_url_alive(url, timeout=1):
+    """Checks if a URL is dead or alive"""
     try:
         response = requests.head(url, allow_redirects=True, timeout=timeout)
         logging.info(f"Checked URL {url}, status code: {response.status_code}")
@@ -102,51 +106,67 @@ def archive_url(url):
 
     return None
 
-def extract_citar_web_templates(text):
-    """Extract full {{citar web}} template strings from text."""
-    pattern = re.compile(r'(\{\{[Cc]itar\s+web.*?\}\})', re.DOTALL)
-    return pattern.findall(text)
+def extract_citar_templates_as_strings(text):
+    """
+    Extract all full {{citar ...}} templates (as strings) from wikitext.
+    Case-insensitive and supports all known citar templates using mwparserfromhell.
+    """
+    wikicode = mwparserfromhell.parse(text)
+    templates = []
+    for template in wikicode.filter_templates():
+        name = template.name.strip().lower()
+        if name.startswith("citar "):
+            templates.append(str(template))  # convert full template back to string
+    return templates
 
 def parse_citar_template(template):
-    """Extract fields from citar web template as a dictionary."""
+    """Extract fields from a mwparserfromhell.Template as a dictionary (case-insensitive keys)."""
     fields = {}
-    parts = template.strip('{}').split('|')[1:]  # remove '{{' and '}}', skip 'citar web'
-    for part in parts:
-        if '=' in part:
-            key, val = part.split('=', 1)
-            fields[key.strip().lower()] = val.strip()
+    for param in template.params:
+        key = str(param.name).strip().lower()
+        val = str(param.value).strip()
+        fields[key] = val
     return fields
 
-def build_updated_template(fields):
-    """Rebuild a citar web template string from fields."""
-    parts = ['{{citar web']
+def build_updated_template(template_name, fields):
+    """Rebuild a citation template string from its name and fields."""
+    parts = [f'{{{{{template_name}']
     for k, v in fields.items():
         parts.append(f'{k}={v}')
     parts.append('}}')
     return '|'.join(parts)
 
-def process_citation_template(title, template_str, archive_url, archive_date, url_is_dead=False):
-    fields = parse_citar_template(template_str)
-    if 'arquivourl' in fields or 'wayb' in fields:
+def process_citation_template(title, template, archive_url, archive_date, url_is_dead=False):
+    """Process the citation template"""
+    logging.info(f"Processing template for article: {title}")
+
+    param_names = [param.name.strip().lower() for param in template.params]
+    if 'arquivourl' in param_names or 'wayb' in param_names:
         logging.info(f"Skipping {title}: Template already has arquivourl or wayb")
         return None
 
-    fields['arquivourl'] = archive_url
-    fields['arquivodata'] = archive_date.strftime('%Y-%m-%d')
-    if url_is_dead:
-        fields['urlmorta'] = 'sim'
-    elif 'urlmorta' in fields:
-        # Remove urlmorta if present and URL is alive
-        del fields['urlmorta']
+    if not template.has("url") or not template.get("url").value.strip():
+        logging.warning(f"Skipping ArchivedCitation for {title}: Missing or empty 'url'")
+        return None
 
-    updated = build_updated_template(fields)
+    original_template = str(template)
+    template.add("arquivourl", archive_url)
+    template.add("arquivodata", archive_date.strftime("%Y-%m-%d"))
+
+    if url_is_dead:
+        template.add("urlmorta", "sim")
+    else:
+        if template.has("urlmorta"):
+            template.remove("urlmorta")
+
+    updated = str(template)
 
     try:
         ArchivedCitation.objects.create(
             article_title=title,
-            original_template=template_str,
+            original_template=original_template,
             updated_template=updated,
-            url=fields.get('url', ''),
+            url=template.get("url").value.strip(),
             arquivourl=archive_url,
             arquivodata=archive_date,
             urlmorta=url_is_dead
@@ -154,12 +174,25 @@ def process_citation_template(title, template_str, archive_url, archive_date, ur
         logging.info(f"Saved ArchivedCitation for {title}")
     except Exception as e:
         logging.warning(f"Failed to save ArchivedCitation for {title}: {e}")
+        logging.debug(traceback.format_exc())
 
     return updated
 
+def extract_external_links_from_text(text):
+    """Extract external URLs from plain text using mwparserfromhell external link filter."""
+    wikicode = mwparserfromhell.parse(text)
+    urls = set()
+
+    # Extract URLs from external links [[...]]
+    for ext_link in wikicode.filter_external_links():
+        url = str(ext_link.url).strip()
+        if url:
+            urls.add(url)
+
+    return list(urls)
+
 def run_archive_bot():
     logging.info("Archive Bot started.")
-
     recent_changes = get_recent_changes_with_diff(grclimit=50, last_hours=1)
 
     unique_articles = set()
@@ -174,7 +207,6 @@ def run_archive_bot():
             continue
 
         unique_articles.add(title)
-
         rev = revisions[0]
         diff_html = rev.get("diff", {}).get("*", "")
         inserted_content = extract_inserted_text_from_diff(diff_html)
@@ -184,33 +216,72 @@ def run_archive_bot():
             continue
 
         real_edits_made += 1
+        wikicode = mwparserfromhell.parse(inserted_content)
+        citar_templates = extract_citar_templates_mwparser(inserted_content)
 
-        urls = extract_citar_web_urls(inserted_content)
-        if not urls:
-            logging.info(f"No citar web URLs found in inserted content for {title}")
-            continue
+        # Extract and deduplicate all URLs from citar templates
+        url_to_templates = {}
+        for tmpl in citar_templates:
+            if tmpl.has("url"):
+                url = str(tmpl.get("url").value).strip()
+                if url:
+                    url_to_templates.setdefault(url, []).append(tmpl)
 
-        for url in urls:
+        processed_urls = set()
+
+        for url, templates in url_to_templates.items():
+            if url.lower().startswith((
+                "http://web.archive.org", 
+                "https://web.archive.org", 
+                "https://doi.org", 
+                "http://doi.org", 
+                "https://dx.doi.org"
+                )):
+                logging.info(f"Skipping DOI or archived URL: {url}")
+                continue
+
+            if url in processed_urls:
+                continue  # skip duplicate
+            processed_urls.add(url)
             total_urls += 1
-            if is_url_alive(url):
-                archive_link = archive_url(url)
-                status = "archived" if archive_link else "failed"
-                message = archive_link or "Archiving failed"
-                if archive_link:
-                    archived_count += 1
-                    templates = extract_citar_web_templates(inserted_content)
-                    for tmpl in templates:
-                        if url in tmpl:
-                            process_citation_template(title, tmpl, archive_link, now().date(), url_is_dead=False)
-            else:
-                archive_link = None
-                status = "skipped"
-                message = "Dead link — not archived"
-                templates = extract_citar_web_templates(inserted_content)
-                for tmpl in templates:
-                    if url in tmpl:
-                        process_citation_template(title, tmpl, None, now().date(), url_is_dead=True)
 
+            # Skip templates that already have arquivourl
+            templates_to_process = [
+                tmpl for tmpl in templates
+                if not tmpl.has("arquivourl") and not tmpl.has("wayb")
+            ]
+
+            if not templates_to_process:
+                logging.info(f"All templates for {url} in {title} already archived.")
+                continue
+
+            # Archive the URL
+            archive_link = archive_url(url)
+            url_is_dead = not is_url_alive(url)
+
+            if not archive_link:
+                logging.info(f"Archiving failed for {url}")
+                continue
+
+            archived = False
+            for tmpl in templates_to_process:
+                updated = process_citation_template(
+                    title=title,
+                    template=tmpl,
+                    archive_url=archive_link,
+                    archive_date=now().date(),
+                    url_is_dead=url_is_dead
+                )
+                if updated:
+                    archived = True
+
+            if archived:
+                archived_count += 1
+                logging.info(f"Archived URL added to template: {url}")
+
+            # Log archive result
+            status = "archived" if archived else "skipped"
+            message = archive_link if archived else "No citation updated"
             try:
                 ArchiveLog.objects.create(
                     url=url,
@@ -222,6 +293,7 @@ def run_archive_bot():
             except Exception as e:
                 logging.warning(f"Failed to save ArchiveLog for {url} ({title}): {e}")
 
+    # Save bot run stats
     try:
         BotRunStats.objects.update_or_create(
             run_date=now(),
@@ -232,7 +304,7 @@ def run_archive_bot():
                 'edits_made': real_edits_made,
             }
         )
-        logging.info(f"BotRunStats saved: Articles: {len(unique_articles)}, URLs checked: {total_urls}, URLs archived: {archived_count}, Real edits: {real_edits_made}")
+        logging.info(f"BotRunStats saved: Articles: {len(unique_articles)}, URLs checked: {total_urls}, URLs archived: {archived_count}, Edits made: {real_edits_made}")
     except Exception as e:
         logging.error(f"Failed to save BotRunStats: {e}")
 

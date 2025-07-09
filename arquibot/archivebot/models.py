@@ -31,4 +31,3 @@ class ArchivedCitation(models.Model):
 
     def __str__(self):
         return f"{self.article_title} - {self.url}"
-
