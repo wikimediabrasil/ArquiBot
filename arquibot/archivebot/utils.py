@@ -17,32 +17,33 @@ logging.basicConfig(
     ]
 )
 
-WIKIPEDIA_API_URL = "https://pt.wikipedia.org/w/api.php"
-
-def get_recent_changes_with_diff(grclimit=50, last_hours=2):
-    """Fetch recent changes with diffs using generator=recentchanges and rvdiffto=prev."""
-    end_time = now().astimezone()
-    start_time = end_time - timedelta(hours=last_hours)
+def fetch_wikitext_for_title(title):
+    """Fetch full wikitext content of a given page title from test.wikipedia.org."""
+    TEST_WIKI_API = "https://test.wikipedia.org/w/api.php"
 
     params = {
         "action": "query",
         "format": "json",
-        "generator": "recentchanges",
-        "grcnamespace": 0,
-        "grclimit": grclimit,
-        "grcshow": "!bot",
-        "grcstart": end_time.isoformat(),
-        "grcend": start_time.isoformat(),
         "prop": "revisions",
-        "rvprop": "ids|timestamp|user|comment|content",
-        "rvdiffto": "prev",
+        "titles": title,
+        "rvprop": "content",
+        "rvslots": "main",
+        "formatversion": 2,
     }
-
-    response = requests.get(WIKIPEDIA_API_URL, params=params)
-    data = response.json()
-    pages = data.get("query", {}).get("pages", {})
-    return pages.values()
-
+    try:
+        response = requests.get(TEST_WIKI_API, params=params, timeout=10)
+        response.raise_for_status()
+        data = response.json()
+        pages = data.get("query", {}).get("pages", [])
+        if pages and "revisions" in pages[0]:
+            return pages[0]["revisions"][0]["slots"]["main"]["content"]
+        else:
+            logging.warning(f"No revisions found for page: {title}")
+            return None
+    except Exception as e:
+        logging.error(f"Failed to fetch wikitext for {title}: {e}")
+        return None
+    
 def extract_inserted_text_from_diff(diff_html):
     """Parse diff HTML and extract inserted text."""
     if not diff_html:
@@ -191,9 +192,9 @@ def extract_external_links_from_text(text):
 
     return list(urls)
 
-def run_archive_bot():
+"""def run_archive_bot():
     logging.info("Archive Bot started.")
-    recent_changes = get_recent_changes_with_diff(grclimit=50, last_hours=1)
+    recent_changes = get_recent_changes_with_diff(grclimit=50, last_hours=2)
 
     unique_articles = set()
     total_urls = 0
@@ -305,6 +306,112 @@ def run_archive_bot():
             }
         )
         logging.info(f"BotRunStats saved: Articles: {len(unique_articles)}, URLs checked: {total_urls}, URLs archived: {archived_count}, Edits made: {real_edits_made}")
+    except Exception as e:
+        logging.error(f"Failed to save BotRunStats: {e}")
+
+    logging.info("Archive Bot finished.")"""
+
+
+def run_archive_bot():
+    title = "User:Nayohmeee"
+    logging.info(f"Running archive bot manually on static page: {title}")
+
+    wikitext = fetch_wikitext_for_title(title)
+    if not wikitext:
+        logging.warning(f"No wikitext found for {title}")
+        return
+
+    citar_templates = extract_citar_templates_mwparser(wikitext)
+
+    if not citar_templates:
+        logging.info(f"No citar templates found in {title}")
+        return
+
+    url_to_templates = {}
+    for tmpl in citar_templates:
+        if tmpl.has("url"):
+            url = str(tmpl.get("url").value).strip()
+            if url:
+                url_to_templates.setdefault(url, []).append(tmpl)
+
+    processed_urls = set()
+    total_urls = 0
+    archived_count = 0
+
+    for url, templates in url_to_templates.items():
+        if url.lower().startswith((
+            "http://web.archive.org",
+            "https://web.archive.org",
+            "https://doi.org",
+            "http://doi.org",
+            "https://dx.doi.org"
+        )):
+            logging.info(f"Skipping DOI or archived URL: {url}")
+            continue
+
+        if url in processed_urls:
+            continue
+        processed_urls.add(url)
+        total_urls += 1
+
+        templates_to_process = [
+            tmpl for tmpl in templates
+            if not tmpl.has("arquivourl") and not tmpl.has("wayb")
+        ]
+
+        if not templates_to_process:
+            logging.info(f"All templates for {url} in {title} already archived.")
+            continue
+
+        archive_link = archive_url(url)
+        url_is_dead = not is_url_alive(url)
+
+        if not archive_link:
+            logging.info(f"Archiving failed for {url}")
+            continue
+
+        archived = False
+        for tmpl in templates_to_process:
+            updated = process_citation_template(
+                title=title,
+                template=tmpl,
+                archive_url=archive_link,
+                archive_date=now().date(),
+                url_is_dead=url_is_dead
+            )
+            if updated:
+                archived = True
+
+        if archived:
+            archived_count += 1
+            logging.info(f"Archived URL added to template: {url}")
+
+        # Log archive result
+        status = "archived" if archived else "skipped"
+        message = archive_link if archived else "No citation updated"
+        try:
+            ArchiveLog.objects.create(
+                url=url,
+                article_title=title,
+                status=status,
+                message=message,
+                timestamp=now()
+            )
+        except Exception as e:
+            logging.warning(f"Failed to save ArchiveLog for {url} ({title}): {e}")
+
+    # Save bot run stats
+    try:
+        BotRunStats.objects.update_or_create(
+            run_date=now(),
+            defaults={
+                'articles_scanned': 1,
+                'urls_checked': total_urls,
+                'urls_archived': archived_count,
+                'edits_made': 1 if total_urls > 0 else 0,
+            }
+        )
+        logging.info(f"BotRunStats saved: Articles: 1, URLs checked: {total_urls}, URLs archived: {archived_count}")
     except Exception as e:
         logging.error(f"Failed to save BotRunStats: {e}")
 

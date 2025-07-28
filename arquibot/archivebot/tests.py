@@ -25,6 +25,14 @@ class TestUtils(unittest.TestCase):
         result = extract_inserted_text_from_diff(html)
         self.assertIn("This is new content.", result)
 
+    def test_extract_inserted_text_from_diff_with_none(self):
+        result = extract_inserted_text_from_diff(None)
+        self.assertEqual(result, "")
+
+    def test_extract_inserted_text_from_diff_with_empty_string(self):
+        result = extract_inserted_text_from_diff("")
+        self.assertEqual(result, "")
+
     def test_extract_citar_templates_mwparser(self):
         text = '{{Citar web|url=https://example.org}} and {{Outro|name=value}}'
         result = extract_citar_templates_mwparser(text)
@@ -71,6 +79,7 @@ class TestUtils(unittest.TestCase):
     @patch("archivebot.utils.requests.get")
     @patch("archivebot.utils.WaybackMachineSaveAPI.save")
     def test_archive_url_success_and_fallback(self, mock_save, mock_get):
+        # Original success test: WaybackPy returns archive_url
         mock_instance = Mock()
         mock_instance.archive_url = "https://web.archive.org/web/20230701/https://example.org"
         mock_save.return_value = None
@@ -78,14 +87,81 @@ class TestUtils(unittest.TestCase):
             result = archive_url("https://example.org")
             self.assertTrue(result.startswith("https://web.archive.org/web"))
 
+    @patch("archivebot.utils.WaybackMachineSaveAPI.save")
+    def test_archive_url_waybackpy_returns_none(self, mock_save):
+        # WaybackPy returns no archive_url → fallback skipped
+        mock_instance = Mock()
+        mock_instance.archive_url = None
+        mock_save.return_value = None
+        with patch("archivebot.utils.WaybackMachineSaveAPI", return_value=mock_instance):
+            result = archive_url("https://noarchive.com")
+            self.assertIsNone(result)
+
+    @patch("archivebot.utils.WaybackMachineSaveAPI")
+    def test_archive_url_waybackpy_returns_no_archive_url(self, mock_wayback_class):
+        # Setup mock instance with archive_url as None
+        mock_instance = Mock()
+        mock_instance.archive_url = None
+        mock_instance.save.return_value = mock_instance  # save() returns the mock instance itself
+
+        mock_wayback_class.return_value = mock_instance
+
+        with self.assertLogs("archivebot.utils", level="WARNING") as log_cm:
+            result = archive_url("https://noarchiveurl.test")
+
+        self.assertIsNone(result)
+        self.assertTrue(any("WaybackPy returned no archive_url" in message for message in log_cm.output))
+
+    @patch("archivebot.utils.WaybackMachineSaveAPI.save", side_effect=Exception("WaybackPy error"))
+    def test_archive_url_waybackpy_exception(self, mock_save):
+        # WaybackPy raises exception → fallback triggered
+        result = archive_url("https://brokenlink.com")
+        self.assertIsNone(result)
+
+    @patch("archivebot.utils.requests.get")
+    @patch("archivebot.utils.WaybackMachineSaveAPI.save", side_effect=Exception("Force fallback"))
+    def test_archive_url_fallback_success(self, mock_save, mock_get):
+        # Fallback returns available snapshot
+        mock_get.return_value.json.return_value = {
+            "archived_snapshots": {
+                "closest": {
+                    "available": True,
+                    "url": "https://web.archive.org/web/20220101/https://fallback.com"
+                }
+            }
+        }
+        result = archive_url("https://fallback.com")
+        self.assertEqual(result, "https://web.archive.org/web/20220101/https://fallback.com")
+
+    @patch("archivebot.utils.requests.get")
+    @patch("archivebot.utils.WaybackMachineSaveAPI.save", side_effect=Exception("Force fallback"))
+    def test_archive_url_fallback_no_archive_found(self, mock_save, mock_get):
+        # Fallback returns no available archive
+        mock_get.return_value.json.return_value = {
+            "archived_snapshots": {
+                "closest": {
+                    "available": False
+                }
+            }
+        }
+        result = archive_url("https://notarchived.com")
+        self.assertIsNone(result)
+
+    @patch("archivebot.utils.requests.get", side_effect=Exception("Fallback API error"))
+    @patch("archivebot.utils.WaybackMachineSaveAPI.save", side_effect=Exception("Force fallback"))
+    def test_archive_url_fallback_exception(self, mock_save, mock_get):
+        # Fallback API itself fails
+        result = archive_url("https://error.com")
+        self.assertIsNone(result)
+
     @patch("archivebot.utils.ArchivedCitation")
     def test_process_citation_template(self, mock_model):
         mock_create = mock_model.objects.create
 
+        # --- Existing test: normal processing ---
         template_str = '{{Citar web|url=https://example.org}}'
         page_title = "Test Page"
 
-        # Parse the string and get the template object
         wikicode = mwparserfromhell.parse(template_str)
         tpl = wikicode.filter_templates()[0]
 
@@ -110,6 +186,79 @@ class TestUtils(unittest.TestCase):
             arquivodata=datetime.strptime('2025-07-17', "%Y-%m-%d").date(),
             urlmorta=True
         )
+
+        mock_create.reset_mock()
+
+        # --- New test case: skips if arquivourl or wayb already present ---
+        template_str2 = '{{Citar web|url=https://example.org|arquivourl=https://archive.org}}'
+        wikicode2 = mwparserfromhell.parse(template_str2)
+        tpl2 = wikicode2.filter_templates()[0]
+
+        result2 = process_citation_template(
+            title=page_title,
+            template=tpl2,
+            archive_url='https://web.archive.org/example',
+            archive_date=datetime.strptime('2025-07-17', "%Y-%m-%d").date(),
+            url_is_dead=False
+        )
+
+        self.assertIsNone(result2)
+        mock_create.assert_not_called()
+
+        # --- New test case: skips if no url or empty url ---
+        for template_str3 in ['{{Citar web|title=Example}}', '{{Citar web|url=  }}']:
+            wikicode3 = mwparserfromhell.parse(template_str3)
+            tpl3 = wikicode3.filter_templates()[0]
+
+            result3 = process_citation_template(
+                title=page_title,
+                template=tpl3,
+                archive_url='https://web.archive.org/example',
+                archive_date=datetime.strptime('2025-07-17', "%Y-%m-%d").date(),
+                url_is_dead=False
+            )
+
+            self.assertIsNone(result3)
+            mock_create.assert_not_called()
+
+        # --- New test: url_is_dead is False AND urlmorta exists, so it should be removed ---
+        template_str4 = '{{Citar web|url=https://example.org|urlmorta=sim}}'
+        wikicode4 = mwparserfromhell.parse(template_str4)
+        tpl4 = wikicode4.filter_templates()[0]
+
+        updated_template4 = process_citation_template(
+            title=page_title,
+            template=tpl4,
+            archive_url='https://web.archive.org/example',
+            archive_date=datetime.strptime('2025-07-17', "%Y-%m-%d").date(),
+            url_is_dead=False
+        )
+
+        self.assertNotIn("urlmorta=", updated_template4)  # urlmorta should be removed
+
+        # --- New test: simulate exception during ArchivedCitation save ---
+        template_str5 = '{{Citar web|url=https://example.org}}'
+        wikicode5 = mwparserfromhell.parse(template_str5)
+        tpl5 = wikicode5.filter_templates()[0]
+
+        # Simulate DB save failure
+        mock_create.side_effect = Exception("DB error")
+
+        # This should NOT raise an exception
+        try:
+            updated_template5 = process_citation_template(
+                title=page_title,
+                template=tpl5,
+                archive_url='https://web.archive.org/example',
+                archive_date=datetime.strptime('2025-07-17', "%Y-%m-%d").date(),
+                url_is_dead=True
+            )
+            self.assertIn("arquivourl=https://web.archive.org/example", updated_template5)
+        except Exception as e:
+            self.fail(f"process_citation_template raised an exception when it shouldn't: {e}")
+
+        mock_create.side_effect = None  # Reset after test
+
 
     @patch('archivebot.utils.requests.get')
     def test_get_recent_changes_with_diff(self, mock_get):
@@ -141,21 +290,207 @@ class TestUtils(unittest.TestCase):
         self.assertIn("Test Page", result[0]['title'])
         self.assertEqual(result[0]['diff'], "+This is a test revision.")
 
+
     @patch("archivebot.utils.ArchiveLog.objects.create")
     @patch("archivebot.utils.is_url_alive")
     @patch("archivebot.utils.archive_url")
     @patch("archivebot.utils.get_recent_changes_with_diff")
     @patch("archivebot.utils.logging.info")
+    @patch("archivebot.utils.process_citation_template")
+    @patch("archivebot.utils.BotRunStats.objects.update_or_create")
+    @patch("archivebot.utils.extract_inserted_text_from_diff")
+    @patch("archivebot.utils.extract_citar_templates_mwparser")
     def test_run_archive_bot(
-        self, mock_recent, mock_archive, mock_alive, mock_stats, mock_log
+        self,
+        mock_extract_citar,
+        mock_extract_diff,
+        mock_stats_update,
+        mock_process_citation,
+        mock_log_info,
+        mock_recent_changes,
+        mock_archive_url,
+        mock_is_alive,
+        mock_archive_log_create,
     ):
-        mock_alive.return_value = True
-        mock_archive.return_value = "https://web.archive.org/web/20230701/https://example.org"
-        mock_recent.return_value = [{
-            "title": "Test Page",
-            "diff": '<ins class="diffchange">{{Citar web|url=https://example.org}}</ins>'
-        }]
+        # Setup diverse recent_changes input to cover all branches:
+        mock_recent_changes.return_value = [
+            {"title": None, "revisions": []},  # No title/revisions: skipped
+            {"title": "EmptyDiff", "revisions": [{"diff": {"*": "<div></div>"}}]},  # Empty inserted content
+            {"title": "DOIPage", "revisions": [{"diff": {"*": '<ins>{{Citar web|url=https://doi.org/example}}</ins>'}}]},  # DOI skipped
+            {"title": "DupPage1", "revisions": [{"diff": {"*": '<ins>{{Citar web|url=https://dup.com}}</ins>'}}]},  # Duplicate URLs
+            {"title": "DupPage2", "revisions": [{"diff": {"*": '<ins>{{Citar web|url=https://dup.com}}</ins>'}}]},
+            {"title": "ArchivedPage", "revisions": [{"diff": {"*": '<ins>{{Citar web|url=https://archived.com|arquivourl=https://archive.org}}</ins>'}}]},  # Already archived
+            {"title": "FailArchivePage", "revisions": [{"diff": {"*": '<ins>{{Citar web|url=https://failarchive.com}}</ins>'}}]},  # Archive fails
+            {"title": "NormalPage", "revisions": [{"diff": {"*": '<ins>{{Citar web|url=https://normal.com}}</ins>'}}]},  # Normal success
+        ]
 
+        # Mock extract_inserted_text_from_diff to extract inside <ins>...</ins>
+        def extract_diff_side_effect(diff_html):
+            if diff_html.startswith("<ins>") and diff_html.endswith("</ins>"):
+                return diff_html[5:-6]
+            return ""
+
+        mock_extract_diff.side_effect = extract_diff_side_effect
+
+        # Helper to create template mocks with different attributes
+        def make_template_mock(url, has_keys=None):
+            has_keys = has_keys or ["url"]
+            mock = MagicMock()
+            mock.has.side_effect = lambda k: k in has_keys
+            mock.get.return_value.value.strip.return_value = url
+            return mock
+
+        templates_map = {
+            "https://doi.org/example": [make_template_mock("https://doi.org/example")],
+            "https://dup.com": [make_template_mock("https://dup.com"), make_template_mock("https://dup.com")],  # duplicates
+            "https://archived.com": [make_template_mock("https://archived.com", has_keys=["url", "arquivourl"])],
+            "https://failarchive.com": [make_template_mock("https://failarchive.com")],
+            "https://normal.com": [make_template_mock("https://normal.com")],
+        }
+
+        def extract_citar_side_effect(content):
+            for key, templates in templates_map.items():
+                if key in content:
+                    return templates
+            return []
+
+        mock_extract_citar.side_effect = extract_citar_side_effect
+
+        # Archive URL returns None for failarchive, else returns archive URL
+        def archive_url_side_effect(url):
+            if url == "https://failarchive.com":
+                return None
+            return f"https://web.archive.org/web/20230701/{url}"
+
+        mock_archive_url.side_effect = archive_url_side_effect
+
+        # URL alive check: failarchive dead, others alive
+        mock_is_alive.side_effect = lambda url: url != "https://failarchive.com"
+
+        # process_citation_template returns True only for "https://normal.com"
+        def process_citation_side_effect(title, template, archive_url, archive_date, url_is_dead):
+            url = template.get("url").value.strip()
+            return url == "https://normal.com"
+
+        mock_process_citation.side_effect = process_citation_side_effect
+
+        # ArchiveLog create raises exception on failarchive to test exception handling
+        def archive_log_side_effect(*args, **kwargs):
+            if kwargs.get("url") == "https://failarchive.com":
+                raise Exception("DB save fail")
+            return MagicMock()
+
+        mock_archive_log_create.side_effect = archive_log_side_effect
+
+        # BotRunStats update_or_create raises exception once to test error handling
+        def bot_stats_side_effect(*args, **kwargs):
+            raise Exception("Stats DB fail")
+
+        mock_stats_update.side_effect = bot_stats_side_effect
+
+        # Run the function
         run_archive_bot()
-        self.assertTrue(mock_log.called, "ArchiveLog.objects.create was not called")
-        self.assertTrue(mock_stats.called, "update_stats was not called")
+
+        # Assert key logs called for major branches
+        mock_log_info.assert_any_call("Archive Bot started.")
+        mock_log_info.assert_any_call("Archive Bot finished.")
+        mock_log_info.assert_any_call("No inserted content in EmptyDiff")
+        mock_log_info.assert_any_call("Skipping DOI or archived URL: https://doi.org/example")
+        mock_log_info.assert_any_call("All templates for https://archived.com in ArchivedPage already archived.")
+        mock_log_info.assert_any_call("Archiving failed for https://failarchive.com")
+        mock_log_info.assert_any_call("Archived URL added to template: https://normal.com")
+
+        # Assert ArchiveLog create called, including failure case
+        self.assertTrue(mock_archive_log_create.call_count >= 1)
+
+        # Assert BotRunStats update_or_create called (exception handled)
+        self.assertTrue(mock_stats_update.called)
+
+    @patch("archivebot.utils.BotRunStats.objects.update_or_create")
+    @patch("archivebot.utils.logging.info")
+    @patch("archivebot.utils.get_recent_changes_with_diff")
+    @patch("archivebot.utils.ArchiveLog.objects.create")
+    @patch("archivebot.utils.archive_url")
+    @patch("archivebot.utils.is_url_alive")
+    @patch("archivebot.utils.extract_inserted_text_from_diff")
+    @patch("archivebot.utils.extract_citar_templates_mwparser")
+    def test_bot_stats_update_success(
+        self,
+        mock_extract_citar,
+        mock_extract_diff,
+        mock_is_alive,
+        mock_archive_url,
+        mock_archive_log_create,
+        mock_recent_changes,
+        mock_log_info,
+        mock_stats_update,
+    ):
+        # Setup mock so BotRunStats update_or_create does NOT raise (simulate success)
+        mock_stats_update.return_value = (MagicMock(), True)
+
+        # Minimal recent changes to run the bot without error
+        mock_recent_changes.return_value = []
+
+        # Provide necessary mocks to prevent errors
+        mock_archive_log_create.return_value = MagicMock()
+        mock_archive_url.return_value = None
+        mock_is_alive.return_value = True
+        mock_extract_diff.return_value = ""
+        mock_extract_citar.return_value = []
+
+        # Run the bot function
+        run_archive_bot()
+
+        # Assert the success log for BotRunStats is called
+        self.assertTrue(
+            any("BotRunStats saved" in call.args[0] for call in mock_log_info.call_args_list),
+            "BotRunStats success log was not called"
+        )
+
+    @patch("archivebot.utils.logging.warning")
+    @patch("archivebot.utils.ArchiveLog.objects.create")
+    @patch("archivebot.utils.is_url_alive")
+    @patch("archivebot.utils.archive_url")
+    @patch("archivebot.utils.get_recent_changes_with_diff")
+    @patch("archivebot.utils.logging.info")
+    @patch("archivebot.utils.process_citation_template")
+    @patch("archivebot.utils.BotRunStats.objects.update_or_create")
+    @patch("archivebot.utils.extract_inserted_text_from_diff")
+    @patch("archivebot.utils.extract_citar_templates_mwparser")
+    def test_archive_log_create_exception_logs_warning(
+        self,
+        mock_extract_citar,
+        mock_extract_diff,
+        mock_stats_update,
+        mock_process_citation,
+        mock_log_info,
+        mock_recent_changes,
+        mock_archive_url,
+        mock_is_alive,
+        mock_archive_log_create,
+        mock_log_warn,
+    ):
+        # Setup minimal recent_changes with one URL to trigger ArchiveLog create
+        mock_recent_changes.return_value = [
+            {"title": "TestPage", "revisions": [{"diff": {"*": '<ins>{{Citar web|url=https://failarchive.com}}</ins>'}}]},
+        ]
+
+        # Mocks to trigger ArchiveLog create raising Exception
+        mock_archive_log_create.side_effect = Exception("DB save fail")
+        mock_archive_url.return_value = None
+        mock_is_alive.return_value = True
+        mock_extract_diff.return_value = '<ins>{{Citar web|url=https://failarchive.com}}</ins>'
+        mock_extract_citar.return_value = [
+            MagicMock(has=lambda k: k == "url", get=MagicMock(return_value=MagicMock(value=MagicMock(strip=MagicMock(return_value="https://failarchive.com")))))
+        ]
+        mock_process_citation.return_value = False
+        mock_stats_update.return_value = (MagicMock(), True)
+
+        # Run the function
+        run_archive_bot()
+
+        # Assert the warning log for ArchiveLog failure is called
+        self.assertTrue(
+            any("Failed to save ArchiveLog" in call.args[0] for call in mock_log_warn.call_args_list),
+            "ArchiveLog create exception warning was not logged"
+        )
