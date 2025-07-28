@@ -17,6 +17,33 @@ logging.basicConfig(
     ]
 )
 
+"""WIKIPEDIA_API_URL = "https://pt.wikipedia.org/w/api.php"
+
+def get_recent_changes_with_diff(grclimit=50, last_hours=2):
+    Fetch recent changes with diffs using generator=recentchanges and rvdiffto=prev.
+    end_time = now().astimezone()
+    start_time = end_time - timedelta(hours=last_hours)
+
+    params = {
+        "action": "query",
+        "format": "json",
+        "generator": "recentchanges",
+        "grcnamespace": 0,
+        "grclimit": grclimit,
+        "grcshow": "!bot",
+        "grcstart": end_time.isoformat(),
+        "grcend": start_time.isoformat(),
+        "prop": "revisions",
+        "rvprop": "ids|timestamp|user|comment|content",
+        "rvdiffto": "prev",
+    }
+
+    response = requests.get(WIKIPEDIA_API_URL, params=params)
+    data = response.json()
+    pages = data.get("query", {}).get("pages", {})
+    return pages.values()"""
+
+
 def fetch_wikitext_for_title(title):
     """Fetch full wikitext content of a given page title from test.wikipedia.org."""
     TEST_WIKI_API = "https://test.wikipedia.org/w/api.php"
