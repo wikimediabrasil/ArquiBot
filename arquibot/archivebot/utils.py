@@ -17,10 +17,10 @@ logging.basicConfig(
     ]
 )
 
-"""WIKIPEDIA_API_URL = "https://pt.wikipedia.org/w/api.php"
+WIKIPEDIA_API_URL = "https://pt.wikipedia.org/w/api.php"
 
 def get_recent_changes_with_diff(grclimit=50, last_hours=2):
-    Fetch recent changes with diffs using generator=recentchanges and rvdiffto=prev.
+    """Fetch recent changes with diffs using generator=recentchanges and rvdiffto=prev."""
     end_time = now().astimezone()
     start_time = end_time - timedelta(hours=last_hours)
 
@@ -41,11 +41,11 @@ def get_recent_changes_with_diff(grclimit=50, last_hours=2):
     response = requests.get(WIKIPEDIA_API_URL, params=params)
     data = response.json()
     pages = data.get("query", {}).get("pages", {})
-    return pages.values()"""
+    return pages.values()
 
-
-def fetch_wikitext_for_title(title):
-    """Fetch full wikitext content of a given page title from test.wikipedia.org."""
+# Function to run the archive bot manually on a static page (Test Wikipedia)
+"""def fetch_wikitext_for_title(title):
+    # Fetch full wikitext content of a given page title from test.wikipedia.org.
     TEST_WIKI_API = "https://test.wikipedia.org/w/api.php"
 
     params = {
@@ -69,7 +69,7 @@ def fetch_wikitext_for_title(title):
             return None
     except Exception as e:
         logging.error(f"Failed to fetch wikitext for {title}: {e}")
-        return None
+        return None """
     
 def extract_inserted_text_from_diff(diff_html):
     """Parse diff HTML and extract inserted text."""
@@ -219,7 +219,7 @@ def extract_external_links_from_text(text):
 
     return list(urls)
 
-"""def run_archive_bot():
+def run_archive_bot():
     logging.info("Archive Bot started.")
     recent_changes = get_recent_changes_with_diff(grclimit=50, last_hours=2)
 
@@ -336,10 +336,10 @@ def extract_external_links_from_text(text):
     except Exception as e:
         logging.error(f"Failed to save BotRunStats: {e}")
 
-    logging.info("Archive Bot finished.")"""
+    logging.info("Archive Bot finished.")
 
-
-def run_archive_bot():
+# Function to run the archive bot manually on a static page (Test Wikipedia)
+"""def run_archive_bot():
     title = "User:Nayohmeee"
     logging.info(f"Running archive bot manually on static page: {title}")
 
@@ -442,4 +442,4 @@ def run_archive_bot():
     except Exception as e:
         logging.error(f"Failed to save BotRunStats: {e}")
 
-    logging.info("Archive Bot finished.")
+    logging.info("Archive Bot finished.") """
