@@ -463,6 +463,7 @@ class TestUtils(unittest.TestCase):
         mock_extract_diff,
         mock_stats_update,
         mock_process_citation,
+        mock_log_info,
         mock_recent_changes,
         mock_archive_url,
         mock_is_alive,
