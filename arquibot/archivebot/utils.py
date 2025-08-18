@@ -9,7 +9,7 @@ import mwparserfromhell
 from .models import ArchiveLog, BotRunStats, ArchivedCitation
 import os
 import json
-import re
+import html
 
 logging.basicConfig(
     level=logging.INFO,
@@ -20,9 +20,9 @@ logging.basicConfig(
     ]
 )
 
-WIKIPEDIA_API_URL = "https://pt.wikipedia.org/w/api.php"
+WIKIPEDIA_API_URL = "https://test.wikipedia.org/w/api.php"
 
-def get_recent_changes_with_diff(grclimit=50, last_hours=48):
+def get_recent_changes_with_diff(grclimit=50, last_hours=1):
     # Fetch recent changes with diffs using generator=recentchanges and rvdiffto=prev.
     end_time = now().astimezone()
     start_time = end_time - timedelta(hours=last_hours)
@@ -46,67 +46,60 @@ def get_recent_changes_with_diff(grclimit=50, last_hours=48):
     pages = data.get("query", {}).get("pages", {})
     return pages.values()
 
-"""WIKIPEDIA_API_URL = "https://test.wikipedia.org/w/api.php"
-
-def get_recent_changes_with_diff(grclimit=50):
-    # Fetch recent changes with diffs using generator=recentchanges and rvdiffto=prev.
-    end_time = now().astimezone()
-    start_time = end_time - timedelta(minutes=20)
-
-    params = {
-        "action": "query",
-        "format": "json",
-        "generator": "recentchanges",
-        "grcnamespace": 0,
-        "grclimit": grclimit,
-        "grcshow": "!bot",
-        "grcstart": end_time.isoformat(),
-        "grcend": start_time.isoformat(),
-        "prop": "revisions",
-        "rvprop": "ids|timestamp|user|comment|content",
-        "rvdiffto": "prev",
-    }
-
-    response = requests.get(WIKIPEDIA_API_URL, params=params)
-    data = response.json()
-    pages = data.get("query", {}).get("pages", {})
-    return pages.values()"""
-
-# Function to run the archive bot manually on a static page (Test Wikipedia)
-def fetch_wikitext_for_title(title):
-    # Fetch full wikitext content of a given page title from test.wikipedia.org.
-    TEST_WIKI_API = "https://test.wikipedia.org/w/api.php"
-
+def fetch_current_wikitext_ptwiki(title: str, api_url: str = WIKIPEDIA_API_URL, timeout: int = 15) -> str | None:
+    """Fetch full current wikitext for an article from wikipedia.org."""
     params = {
         "action": "query",
         "format": "json",
         "prop": "revisions",
-        "titles": title,
         "rvprop": "content",
         "rvslots": "main",
         "formatversion": 2,
+        "titles": title,
     }
     try:
-        response = requests.get(TEST_WIKI_API, params=params, timeout=10)
-        response.raise_for_status()
-        data = response.json()
+        r = requests.get(api_url, params=params, timeout=timeout)
+        r.raise_for_status()
+        data = r.json()
         pages = data.get("query", {}).get("pages", [])
-        if pages and "revisions" in pages[0]:
-            return pages[0]["revisions"][0]["slots"]["main"]["content"]
-        else:
-            logging.warning(f"No revisions found for page: {title}")
+        if not pages:
             return None
+        revs = pages[0].get("revisions", [])
+        if not revs:
+            return None
+        return revs[0]["slots"]["main"]["content"]
     except Exception as e:
-        logging.error(f"Failed to fetch wikitext for {title}: {e}")
+        logging.warning(f"Failed to fetch full wikitext for '{title}': {e}")
         return None
-    
-def extract_inserted_text_from_diff(diff_html):
-    """Parse diff HTML and extract inserted text."""
-    if not diff_html:
-        return ""
-    soup = BeautifulSoup(diff_html, "html.parser")
-    inserted_texts = [ins.get_text() for ins in soup.find_all("ins")]
-    return "\n".join(inserted_texts)
+
+def extract_inserted_wikitext(diff_html, revision=None, full_wikitext=None):
+    """
+    Extract inserted wikitext from a diff HTML.
+    Falls back to the full revision content or full page content if no <ins> tags are found.
+    Always returns a string.
+    """
+    # Try extracting inserted content from diff <ins> tags
+    if diff_html:
+        soup = BeautifulSoup(diff_html, "html.parser")
+        inserted_texts = [ins.get_text() for ins in soup.find_all("ins")]
+        if inserted_texts:
+            return "\n".join(inserted_texts)
+
+    # Fallback to revision content
+    if revision:
+        content = ""
+        if "slots" in revision and "main" in revision["slots"]:
+            content = revision["slots"]["main"].get("*") or ""
+        elif "content" in revision:
+            content = revision["content"] or ""
+        return content
+
+    # Final fallback: full wikitext passed explicitly
+    if full_wikitext:
+        return full_wikitext
+
+    # Nothing found → return empty string
+    return ""
 
 def extract_citar_templates_mwparser(wikitext):
     """Use mwparserfromhell to extract all citar templates"""
@@ -250,7 +243,7 @@ def extract_external_links_from_text(text):
 
 def run_archive_bot():
     logging.info("Archive Bot started.")
-    recent_changes = get_recent_changes_with_diff(grclimit=50)
+    recent_changes = get_recent_changes_with_diff(grclimit=50, last_hours=1)
 
     unique_articles = set()
     total_urls = 0
@@ -266,17 +259,28 @@ def run_archive_bot():
         unique_articles.add(title)
         rev = revisions[0]
         diff_html = rev.get("diff", {}).get("*", "")
-        inserted_content = extract_inserted_text_from_diff(diff_html)
-        if "templates" in title:
-            print(revisions)
+        inserted_content = extract_inserted_wikitext(diff_html)
 
-        if not inserted_content.strip():
-            logging.info(f"No inserted content in {title}")
-            continue
+        # If the diff didn’t yield usable wikitext (likely HTML/plain text), fall back to full page
+        content_to_scan = inserted_content
 
+        # Heuristic: if there’s no wikitext markers, treat as not-usable
+        if not content_to_scan.strip() or ("{{" not in content_to_scan and "http" not in content_to_scan):
+            full_wikitext = fetch_current_wikitext_ptwiki(title) or ""
+            if full_wikitext.strip():
+                logging.info(f"Scanning diff snippet in {title}.")
+                content_to_scan = full_wikitext
+            else:
+                logging.info(f"No inserted content for {title}")
+                continue
+        
         real_edits_made += 1
+        wikicode = mwparserfromhell.parse(content_to_scan)
+        citar_templates = extract_citar_templates_mwparser(content_to_scan)
+
+        """real_edits_made += 1
         wikicode = mwparserfromhell.parse(inserted_content)
-        citar_templates = extract_citar_templates_mwparser(inserted_content)
+        citar_templates = extract_citar_templates_mwparser(inserted_content)"""
 
         # Extract and deduplicate all URLs from citar templates
         url_to_templates = {}
@@ -368,3 +372,97 @@ def run_archive_bot():
         logging.error(f"Failed to save BotRunStats: {e}")
 
     logging.info("Archive Bot finished.")
+
+def admin_panel_check_func(url: str, archived_url_map: dict) -> str | None:
+    """
+    Check if the given URL has an archived template in the local admin panel data.
+
+    Args:
+        url (str): The original URL to check.
+        archived_url_map (dict): A dictionary mapping original URLs to archived template strings.
+
+    Returns:
+        str or None: The archived template string if found, else None.
+    """
+    return archived_url_map.get(url)
+
+
+def update_archived_templates_in_article(title: str, archived_url_map: dict, edit_comment: str = "Update archived URLs via bot"):
+    """
+    Fetch the Wikipedia page, replace citation templates with archived versions where available,
+    and commit the updated wikitext back to the wiki.
+
+    Args:
+        title (str): Wikipedia page title to edit (e.g. "User:YourBot/sandbox").
+        archived_url_map (dict): Map original URLs to archived template strings.
+        edit_comment (str): Edit summary/comment.
+
+    Returns:
+        tuple: (success: bool, message: str)
+    """
+    API_BASE = "https://test.wikipedia.org/w/rest.php/v1/page/"
+    token = os.environ.get("ARQUIBOT_TOKEN")
+    if not token:
+        return False, "Missing ARQUIBOT_TOKEN environment variable."
+
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Content-Type": "application/json",
+        "User-Agent": "Arquibot/0.1"
+    }
+
+    # Step 1: Fetch current wikitext for the article
+    try:
+        resp = requests.get(API_BASE + title.replace(" ", "_"), headers=headers)
+        resp.raise_for_status()
+    except Exception as e:
+        return False, f"Failed to fetch article '{title}': {e}"
+
+    page_data = resp.json()
+    wikitext = page_data.get("source", "")
+    latest_id = page_data.get("latest", {}).get("id")
+    if not wikitext or not latest_id:
+        return False, "Failed to get wikitext or revision ID."
+
+    # Step 2: Parse wikitext with mwparserfromhell
+    wikicode = mwparserfromhell.parse(wikitext)
+    templates = wikicode.filter_templates()
+    changed = False
+
+    # Step 3: Iterate over citation templates and replace if archived version exists
+    for template in templates:
+        if not template.name.lower().startswith("citar "):
+            continue
+
+        if not template.has("url"):
+            continue
+
+        url = str(template.get("url").value).strip()
+
+        archived_template_str = admin_panel_check_func(url, archived_url_map)
+        if archived_template_str:
+            # Replace the whole template with the archived one
+            try:
+                new_template = mwparserfromhell.parse(archived_template_str).filter_templates()[0]
+                wikicode.replace(template, new_template)
+                changed = True
+            except Exception as e:
+                # Log parsing errors but continue
+                print(f"Error parsing archived template for URL {url}: {e}")
+
+    if not changed:
+        return False, "No archived templates were applied. Article unchanged."
+
+    # Step 4: Commit updated wikitext back to Wikipedia
+    payload = {
+        "source": str(wikicode),
+        "comment": edit_comment,
+        "latest": {"id": latest_id}
+    }
+
+    try:
+        put_resp = requests.put(API_BASE + title.replace(" ", "_"), headers=headers, data=json.dumps(payload))
+        put_resp.raise_for_status()
+        return True, f"Successfully updated archived templates in '{title}'."
+    except Exception as e:
+        return False, f"Failed to commit edit: {e}"
