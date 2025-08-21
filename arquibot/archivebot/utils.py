@@ -10,6 +10,7 @@ from .models import ArchiveLog, BotRunStats, ArchivedCitation
 import os
 import json
 import html
+from django.conf import settings
 
 logging.basicConfig(
     level=logging.INFO,
@@ -41,7 +42,12 @@ def get_recent_changes_with_diff(grclimit=50, last_hours=1):
         "rvdiffto": "prev",
     }
 
-    response = requests.get(WIKIPEDIA_API_URL, params=params)
+    HEADERS = {
+        "User-Agent": "Arquibot/1.0 (naomi.ibeh69@gmail.com)"
+    }
+
+    response = requests.get(WIKIPEDIA_API_URL, params=params, headers=HEADERS)
+    #response = requests.get(WIKIPEDIA_API_URL, params=params)
     data = response.json()
     pages = data.get("query", {}).get("pages", {})
     return pages.values()
@@ -58,7 +64,10 @@ def fetch_current_wikitext_ptwiki(title: str, api_url: str = WIKIPEDIA_API_URL, 
         "titles": title,
     }
     try:
-        r = requests.get(api_url, params=params, timeout=timeout)
+        HEADERS = {
+            "User-Agent": "Arquibot/1.0 (naomi.ibeh69@gmail.com)"
+        }
+        r = requests.get(api_url, params=params, headers=HEADERS, timeout=timeout)
         r.raise_for_status()
         data = r.json()
         pages = data.get("query", {}).get("pages", [])
@@ -241,138 +250,6 @@ def extract_external_links_from_text(text):
 
     return list(urls)
 
-def run_archive_bot():
-    logging.info("Archive Bot started.")
-    recent_changes = get_recent_changes_with_diff(grclimit=50, last_hours=1)
-
-    unique_articles = set()
-    total_urls = 0
-    archived_count = 0
-    real_edits_made = 0
-
-    for page in recent_changes:
-        title = page.get("title")
-        revisions = page.get("revisions", [])
-        if not title or not revisions:
-            continue
-
-        unique_articles.add(title)
-        rev = revisions[0]
-        diff_html = rev.get("diff", {}).get("*", "")
-        inserted_content = extract_inserted_wikitext(diff_html)
-
-        # If the diff didn’t yield usable wikitext (likely HTML/plain text), fall back to full page
-        content_to_scan = inserted_content
-
-        # Heuristic: if there’s no wikitext markers, treat as not-usable
-        if not content_to_scan.strip() or ("{{" not in content_to_scan and "http" not in content_to_scan):
-            full_wikitext = fetch_current_wikitext_ptwiki(title) or ""
-            if full_wikitext.strip():
-                logging.info(f"Scanning diff snippet in {title}.")
-                content_to_scan = full_wikitext
-            else:
-                logging.info(f"No inserted content for {title}")
-                continue
-        
-        real_edits_made += 1
-        wikicode = mwparserfromhell.parse(content_to_scan)
-        citar_templates = extract_citar_templates_mwparser(content_to_scan)
-
-        """real_edits_made += 1
-        wikicode = mwparserfromhell.parse(inserted_content)
-        citar_templates = extract_citar_templates_mwparser(inserted_content)"""
-
-        # Extract and deduplicate all URLs from citar templates
-        url_to_templates = {}
-        for tmpl in citar_templates:
-            if tmpl.has("url"):
-                url = str(tmpl.get("url").value).strip()
-                if url:
-                    url_to_templates.setdefault(url, []).append(tmpl)
-
-        processed_urls = set()
-
-        for url, templates in url_to_templates.items():
-            if url.lower().startswith((
-                "http://web.archive.org", 
-                "https://web.archive.org", 
-                "https://doi.org", 
-                "http://doi.org", 
-                "https://dx.doi.org"
-                )):
-                logging.info(f"Skipping DOI or archived URL: {url}")
-                continue
-
-            if url in processed_urls:
-                continue  # skip duplicate
-            processed_urls.add(url)
-            total_urls += 1
-
-            # Skip templates that already have arquivourl
-            templates_to_process = [
-                tmpl for tmpl in templates
-                if not tmpl.has("arquivourl") and not tmpl.has("wayb")
-            ]
-
-            if not templates_to_process:
-                logging.info(f"All templates for {url} in {title} already archived.")
-                continue
-
-            # Archive the URL
-            archive_link = archive_url(url)
-            url_is_dead = not is_url_alive(url)
-
-            if not archive_link:
-                logging.info(f"Archiving failed for {url}")
-                continue
-
-            archived = False
-            for tmpl in templates_to_process:
-                updated = process_citation_template(
-                    title=title,
-                    template=tmpl,
-                    archive_url=archive_link,
-                    archive_date=now().date(),
-                    url_is_dead=url_is_dead
-                )
-                if updated:
-                    archived = True
-
-            if archived:
-                archived_count += 1
-                logging.info(f"Archived URL added to template: {url}")
-
-            # Log archive result
-            status = "archived" if archived else "skipped"
-            message = archive_link if archived else "No citation updated"
-            try:
-                ArchiveLog.objects.create(
-                    url=url,
-                    article_title=title,
-                    status=status,
-                    message=message,
-                    timestamp=now()
-                )
-            except Exception as e:
-                logging.warning(f"Failed to save ArchiveLog for {url} ({title}): {e}")
-
-    # Save bot run stats
-    try:
-        BotRunStats.objects.update_or_create(
-            run_date=now(),
-            defaults={
-                'articles_scanned': len(unique_articles),
-                'urls_checked': total_urls,
-                'urls_archived': archived_count,
-                'edits_made': real_edits_made,
-            }
-        )
-        logging.info(f"BotRunStats saved: Articles: {len(unique_articles)}, URLs checked: {total_urls}, URLs archived: {archived_count}, Edits made: {real_edits_made}")
-    except Exception as e:
-        logging.error(f"Failed to save BotRunStats: {e}")
-
-    logging.info("Archive Bot finished.")
-
 def admin_panel_check_func(url: str, archived_url_map: dict) -> str | None:
     """
     Check if the given URL has an archived template in the local admin panel data.
@@ -466,3 +343,144 @@ def update_archived_templates_in_article(title: str, archived_url_map: dict, edi
         return True, f"Successfully updated archived templates in '{title}'."
     except Exception as e:
         return False, f"Failed to commit edit: {e}"
+
+
+def run_archive_bot(interval_hours: int = 24):
+    logging.info("Archive Bot started.")
+
+    # Fetch recent changes
+    recent_changes = get_recent_changes_with_diff(grclimit=50, last_hours=1) # recent_changes = get_recent_changes_with_diff(grclimit=50, last_hours=interval_hours)
+
+    if not recent_changes:
+        logging.info("No recent changes found.")
+        return
+
+    logging.info(f"Found {len(recent_changes)} recent changes to process.")
+
+    # Preload all archived URLs from the DB
+    archived_url_map = {
+        entry.url: entry.updated_template
+        for entry in ArchivedCitation.objects.all()
+    }
+    logging.info(f"Loaded {len(archived_url_map)} archived URLs from database.")
+
+    unique_articles = set()
+    total_urls = 0
+    archived_count = 0
+    real_edits_made = 0
+
+    for page in recent_changes:
+        title = page.get("title")
+        revisions = page.get("revisions", [])
+        if not title or not revisions:
+            logging.warning(f"Skipping {title or 'Unknown'}: missing revision content")
+            continue
+
+        rev = revisions[0]
+        diff_html = rev.get("diff", {}).get("*", "")
+        rev_content = rev.get("content")  # Full wikitext if available
+
+        # Extract inserted wikitext, fallback to full revision content
+        content_to_scan = extract_inserted_wikitext(diff_html) or rev_content
+        if not content_to_scan or not content_to_scan.strip():
+            # Last resort: fetch current wikitext from wiki
+            content_to_scan = fetch_current_wikitext_ptwiki(title) or ""
+            if not content_to_scan.strip():
+                logging.warning(f"Skipping {title}: no content to scan")
+                continue
+
+        unique_articles.add(title)
+        real_edits_made += 1
+
+        # Parse templates
+        citar_templates = extract_citar_templates_mwparser(content_to_scan)
+        if not citar_templates:
+            continue
+
+        # Map URLs to templates
+        url_to_templates = {}
+        for tmpl in citar_templates:
+            if tmpl.has("url"):
+                url = str(tmpl.get("url").value).strip()
+                if url:
+                    url_to_templates.setdefault(url, []).append(tmpl)
+
+        processed_urls = set()
+
+        for url, templates in url_to_templates.items():
+            if url.lower().startswith((
+                "http://web.archive.org",
+                "https://web.archive.org",
+                "https://doi.org",
+                "http://doi.org",
+                "https://dx.doi.org"
+            )):
+                continue
+
+            if url in processed_urls:
+                continue
+            processed_urls.add(url)
+            total_urls += 1
+
+            # Skip templates already archived in DB
+            templates_to_process = [
+                tmpl for tmpl in templates
+                if url not in archived_url_map and not tmpl.has("arquivourl") and not tmpl.has("wayb")
+            ]
+
+            if not templates_to_process:
+                logging.info(f"{url} in {title} already archived.")
+                continue
+
+            # Archive the URL if not in DB
+            archive_link = archived_url_map.get(url) or archive_url(url)
+            url_is_dead = not is_url_alive(url)
+
+            if not archive_link:
+                logging.info(f"Archiving failed for {url}")
+                continue
+
+            archived = False
+            for tmpl in templates_to_process:
+                updated = process_citation_template(
+                    title=title,
+                    template=tmpl,
+                    archive_url=archive_link,
+                    archive_date=now().date(),
+                    url_is_dead=url_is_dead
+                )
+                if updated:
+                    archived = True
+                    # Save to DB and cache
+                    ArchivedCitation.objects.update_or_create(
+                        url=url,
+                        defaults={"citation_template": str(tmpl)}
+                    )
+                    archived_url_map[url] = str(tmpl)
+
+            if archived:
+                archived_count += 1
+                logging.info(f"Archived URL added to template: {url}")
+
+        # Push updates to Wikipedia using preloaded archived_url_map
+        success, msg = update_archived_templates_in_article(title, archived_url_map)
+        if success:
+            real_edits_made += 1
+        logging.info(f"Article update result for {title}: {msg}")
+
+    # Save bot stats
+    try:
+        BotRunStats.objects.update_or_create(
+            run_date=now(),
+            defaults={
+                "articles_scanned": len(unique_articles),
+                "urls_checked": total_urls,
+                "urls_archived": archived_count,
+                "edits_made": real_edits_made,
+            }
+        )
+        logging.info(f"BotRunStats saved: Articles: {len(unique_articles)}, URLs checked: {total_urls}, URLs archived: {archived_count}, Edits made: {real_edits_made}")
+    except Exception as e:
+        logging.error(f"Failed to save BotRunStats: {e}")
+
+    logging.info("Archive Bot finished.")

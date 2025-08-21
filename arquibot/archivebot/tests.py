@@ -3,10 +3,18 @@ from unittest.mock import patch, Mock, MagicMock
 from datetime import datetime
 import requests
 import mwparserfromhell
+import os
+import json
+import django
+
+os.environ.setdefault("DJANGO_SETTINGS_MODULE", "arquibot.settings")
+django.setup()
+
 
 from archivebot.utils import (
     get_recent_changes_with_diff,
-    extract_inserted_text_from_diff,
+    fetch_current_wikitext_ptwiki,
+    extract_inserted_wikitext,
     extract_citar_templates_mwparser,
     extract_citar_templates_as_strings,
     extract_external_links_from_text,
@@ -15,24 +23,137 @@ from archivebot.utils import (
     parse_citar_template,
     build_updated_template,
     process_citation_template,
+    admin_panel_check_func,
+    update_archived_templates_in_article,
     run_archive_bot
 )
 
 class TestUtils(unittest.TestCase):
+    #  fetch_current_wikitext_ptwiki tests
+    @patch("archivebot.utils.requests.get")
+    def test_successful_fetch(self, mock_get):
+        # Mock JSON response with one page and one revision
+        mock_resp = MagicMock()
+        mock_resp.raise_for_status.return_value = None
+        mock_resp.json.return_value = {
+            "query": {
+                "pages": [
+                    {
+                        "pageid": 123,
+                        "title": "Test Article",
+                        "revisions": [
+                            {
+                                "slots": {
+                                    "main": {
+                                        "content": "Full wikitext content here"
+                                    }
+                                }
+                            }
+                        ]
+                    }
+                ]
+            }
+        }
+        mock_get.return_value = mock_resp
 
-    def test_extract_inserted_text_from_diff(self):
+        result = fetch_current_wikitext_ptwiki("Test Article")
+        self.assertEqual(result, "Full wikitext content here")
+        mock_get.assert_called_once()
+        called_params = mock_get.call_args[1]["params"]
+        self.assertEqual(called_params["titles"], "Test Article")
+
+    @patch("archivebot.utils.requests.get")
+    def test_no_pages_returns_none(self, mock_get):
+        mock_resp = MagicMock()
+        mock_resp.raise_for_status.return_value = None
+        mock_resp.json.return_value = {"query": {"pages": []}}
+        mock_get.return_value = mock_resp
+
+        result = fetch_current_wikitext_ptwiki("NoPage")
+        self.assertIsNone(result)
+
+    @patch("archivebot.utils.requests.get")
+    def test_no_revisions_returns_none(self, mock_get):
+        mock_resp = MagicMock()
+        mock_resp.raise_for_status.return_value = None
+        mock_resp.json.return_value = {
+            "query": {"pages": [{"pageid": 1, "title": "EmptyPage", "revisions": []}]}
+        }
+        mock_get.return_value = mock_resp
+
+        result = fetch_current_wikitext_ptwiki("EmptyPage")
+        self.assertIsNone(result)
+
+    @patch("archivebot.utils.requests.get")
+    def test_http_error_returns_none_and_logs_warning(self, mock_get):
+        mock_resp = MagicMock()
+        mock_resp.raise_for_status.side_effect = requests.HTTPError("404 Not Found")
+        mock_get.return_value = mock_resp
+
+        with self.assertLogs("archivebot.utils", level="WARNING") as log_cm:
+            result = fetch_current_wikitext_ptwiki("HTTPErrorPage")
+        self.assertIsNone(result)
+        self.assertTrue(any("Failed to fetch full wikitext" in message for message in log_cm.output))
+
+    @patch("archivebot.utils.requests.get", side_effect=requests.RequestException("Timeout"))
+    def test_request_exception_returns_none_and_logs_warning(self, mock_get):
+        with self.assertLogs("archivebot.utils", level="WARNING") as log_cm:
+            result = fetch_current_wikitext_ptwiki("TimeoutPage")
+        self.assertIsNone(result)
+        self.assertTrue(any("Failed to fetch full wikitext" in message for message in log_cm.output))
+
+    # extract_inserted_wikitext tests
+    def test_extract_inserted_wikitext(self):
         html = '<div><ins class="diffchange">This is new content.</ins></div>'
-        result = extract_inserted_text_from_diff(html)
+        result = extract_inserted_wikitext(html)
         self.assertIn("This is new content.", result)
 
-    def test_extract_inserted_text_from_diff_with_none(self):
-        result = extract_inserted_text_from_diff(None)
+    def test_extract_inserted_wikitext_from_diff_with_none(self):
+        result = extract_inserted_wikitext(None)
         self.assertEqual(result, "")
 
-    def test_extract_inserted_text_from_diff_with_empty_string(self):
-        result = extract_inserted_text_from_diff("")
+    def test_extract_inserted_wikitext_from_diff_with_empty_string(self):
+        result = extract_inserted_wikitext("")
         self.assertEqual(result, "")
 
+    def test_fetch_revision_content_with_slots():
+    # revision with slots -> should pull from slots.main["*"]
+        revision = {
+            "slots": {
+                "main": {
+                    "*": "slot-based content"
+                }
+            }
+        }
+        result = extract_inserted_wikitext(revision)
+        assert result == "slot-based content"
+
+
+    def test_fetch_revision_content_with_content_key():
+        # revision with legacy "content" -> should pull from content
+        revision = {
+            "content": "legacy content"
+        }
+        result = extract_inserted_wikitext(revision)
+        assert result == "legacy content"
+
+
+    def test_fetch_revision_content_with_empty_content():
+        # revision with empty slots and content
+        revision = {
+            "slots": {"main": {"*": ""}},
+            "content": ""
+        }
+        result = extract_inserted_wikitext(revision)
+        assert result == ""
+
+    def test_fetch_revision_content_with_missing_keys():
+        # revision missing both slots and content
+        revision = {}
+        result = extract_inserted_wikitext(revision)
+        assert result == ""  # or None, depending on your 
+
+    # extract_citar_templates tests
     def test_extract_citar_templates_mwparser(self):
         text = '{{Citar web|url=https://example.org}} and {{Outro|name=value}}'
         result = extract_citar_templates_mwparser(text)
@@ -44,12 +165,14 @@ class TestUtils(unittest.TestCase):
         result = extract_citar_templates_as_strings(text)
         self.assertEqual(result, ['{{Citar web|url=https://example.org}}'])
 
+    # parse_citar_template and build_updated_template tests
     def test_parse_citar_template(self):
         tpl = mwparserfromhell.parse("{{Citar web|url=https://example.org|title=Example}}").filter_templates()[0]
         parsed = parse_citar_template(tpl)
         self.assertEqual(parsed["url"], "https://example.org")
         self.assertEqual(parsed["title"], "Example")
 
+    # build_updated_template tests
     def test_build_updated_template(self):
         fields = {
             "url": "https://example.org",
@@ -60,12 +183,14 @@ class TestUtils(unittest.TestCase):
         self.assertIn("url=https://example.org", result)
         self.assertIn("arquivourl=https://web.archive.org/save/https://example.org", result)
 
+    # extract_external_links_from_text tests
     def test_extract_external_links_from_text(self):
         text = 'Some text with https://example.org and another https://site.com/page'
         result = extract_external_links_from_text(text)
         self.assertIn("https://example.org", result)
         self.assertIn("https://site.com/page", result)
 
+    # is_url_alive and archive_url tests
     @patch("archivebot.utils.requests.head")
     def test_is_url_alive_success(self, mock_head):
         mock_head.return_value.status_code = 200
@@ -76,6 +201,7 @@ class TestUtils(unittest.TestCase):
         mock_head.side_effect = requests.RequestException()
         self.assertFalse(is_url_alive("https://example.org"))
 
+    # archive_url tests
     @patch("archivebot.utils.requests.get")
     @patch("archivebot.utils.WaybackMachineSaveAPI.save")
     def test_archive_url_success_and_fallback(self, mock_save, mock_get):
@@ -154,6 +280,7 @@ class TestUtils(unittest.TestCase):
         result = archive_url("https://error.com")
         self.assertIsNone(result)
 
+    # process_citation_template tests
     @patch("archivebot.utils.ArchivedCitation")
     def test_process_citation_template(self, mock_model):
         mock_create = mock_model.objects.create
@@ -259,7 +386,7 @@ class TestUtils(unittest.TestCase):
 
         mock_create.side_effect = None  # Reset after test
 
-
+    # get_recent_changes_with_diff tests
     @patch('archivebot.utils.requests.get')
     def test_get_recent_changes_with_diff(self, mock_get):
         mock_get.return_value = MagicMock()
@@ -290,7 +417,7 @@ class TestUtils(unittest.TestCase):
         self.assertIn("Test Page", result[0]['title'])
         self.assertEqual(result[0]['diff'], "+This is a test revision.")
 
-
+    # run archive_bot tests
     @patch("archivebot.utils.ArchiveLog.objects.create")
     @patch("archivebot.utils.is_url_alive")
     @patch("archivebot.utils.archive_url")
@@ -406,6 +533,7 @@ class TestUtils(unittest.TestCase):
         # Assert BotRunStats update_or_create called (exception handled)
         self.assertTrue(mock_stats_update.called)
 
+    # BotRunStats update_or_create tests
     @patch("archivebot.utils.BotRunStats.objects.update_or_create")
     @patch("archivebot.utils.logging.info")
     @patch("archivebot.utils.get_recent_changes_with_diff")
@@ -494,3 +622,95 @@ class TestUtils(unittest.TestCase):
             any("Failed to save ArchiveLog" in call.args[0] for call in mock_log_warn.call_args_list),
             "ArchiveLog create exception warning was not logged"
         )
+
+    # admin_panel_check_func 
+    def test_admin_panel_check_func_found(self):
+        archived_map = {"https://example.com": "{{Citar web|url=https://example.com|arquivourl=https://archive.org}}"}
+        result = admin_panel_check_func("https://example.com", archived_map)
+        self.assertEqual(result, archived_map["https://example.com"])
+
+    def test_admin_panel_check_func_not_found(self):
+        archived_map = {"https://example.com": "archived template"}
+        result = admin_panel_check_func("https://missing.com", archived_map)
+        self.assertIsNone(result)
+
+    # update_archived_templates_in_article
+    @patch.dict(os.environ, {"ARQUIBOT_TOKEN": "FAKE_TOKEN"})
+    @patch("archivebot.utils.requests.get")
+    @patch("archivebot.utils.requests.put")
+    def test_update_archived_templates_in_article_success(self, mock_put, mock_get):
+        # Mock GET response
+        mock_get.return_value = Mock()
+        mock_get.return_value.raise_for_status.return_value = None
+        mock_get.return_value.json.return_value = {
+            "source": "{{Citar web|url=https://example.com}}",
+            "latest": {"id": 12345}
+        }
+
+        archived_map = {
+            "https://example.com": "{{Citar web|url=https://example.com|arquivourl=https://archive.org}}"
+        }
+
+        # Mock PUT response
+        mock_put.return_value = Mock()
+        mock_put.return_value.raise_for_status.return_value = None
+
+        success, msg = update_archived_templates_in_article("Test Page", archived_map)
+        self.assertTrue(success)
+        self.assertIn("Successfully updated", msg)
+
+        # Ensure PUT was called with the updated template
+        put_payload = json.loads(mock_put.call_args[1]["data"])
+        self.assertIn("arquivourl=https://archive.org", put_payload["source"])
+
+    @patch.dict(os.environ, {}, clear=True)
+    def test_update_archived_templates_in_article_missing_token(self):
+        success, msg = update_archived_templates_in_article("Test Page", {})
+        self.assertFalse(success)
+        self.assertIn("Missing ARQUIBOT_TOKEN", msg)
+
+    @patch.dict(os.environ, {"ARQUIBOT_TOKEN": "FAKE_TOKEN"})
+    @patch("archivebot.utils.requests.get", side_effect=Exception("GET failed"))
+    def test_update_archived_templates_in_article_get_fail(self, mock_get):
+        success, msg = update_archived_templates_in_article("Test Page", {})
+        self.assertFalse(success)
+        self.assertIn("Failed to fetch article", msg)
+
+    @patch.dict(os.environ, {"ARQUIBOT_TOKEN": "FAKE_TOKEN"})
+    @patch("archivebot.utils.requests.get")
+    @patch("archivebot.utils.requests.put", side_effect=Exception("PUT failed"))
+    def test_update_archived_templates_in_article_put_fail(self, mock_put, mock_get):
+        mock_get.return_value = Mock()
+        mock_get.return_value.raise_for_status.return_value = None
+        mock_get.return_value.json.return_value = {
+            "source": "{{Citar web|url=https://example.com}}",
+            "latest": {"id": 12345}
+        }
+
+        archived_map = {
+            "https://example.com": "{{Citar web|url=https://example.com|arquivourl=https://archive.org}}"
+        }
+
+        success, msg = update_archived_templates_in_article("Test Page", archived_map)
+        self.assertFalse(success)
+        self.assertIn("Failed to commit edit", msg)
+
+    @patch.dict(os.environ, {"ARQUIBOT_TOKEN": "FAKE_TOKEN"})
+    @patch("archivebot.utils.requests.get")
+    def test_update_archived_templates_in_article_no_changes(self, mock_get):
+        # No templates match archived URLs
+        mock_get.return_value = Mock()
+        mock_get.return_value.raise_for_status.return_value = None
+        mock_get.return_value.json.return_value = {
+            "source": "{{Citar web|url=https://other.com}}",
+            "latest": {"id": 12345}
+        }
+
+        archived_map = {
+            "https://example.com": "{{Citar web|url=https://example.com|arquivourl=https://archive.org}}"
+        }
+
+        success, msg = update_archived_templates_in_article("Test Page", archived_map)
+        self.assertFalse(success)
+        self.assertIn("Article unchanged", msg)
+
