@@ -18,6 +18,22 @@ load_dotenv()  # loads variables from .env
 
 ARQUIBOT_TOKEN = os.getenv("ARQUIBOT_TOKEN")
 
+WIKIPEDIA_API_URL = os.getenv("WIKIPEDIA_API_URL", "https://test.wikipedia.org/w/api.php")
+API_BASE = os.getenv("API_BASE", "https://test.wikipedia.org/w/rest.php/v1/page/")
+REQUEST_TIMEOUT = int(os.getenv("REQUEST_TIMEOUT", 15))
+SKIPPED_URL_PREFIXES = [
+    "http://web.archive.org",
+    "https://web.archive.org",
+    "https://doi.org",
+    "http://doi.org",
+    "https://dx.doi.org"
+]
+BOT_NAME = "Arquibot"
+BOT_VERSION = "1.0"
+BOT_EMAIL = "naomi.ibeh69@gmail.com"
+
+
+
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent

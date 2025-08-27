@@ -10,7 +10,6 @@ import django
 os.environ.setdefault("DJANGO_SETTINGS_MODULE", "arquibot.settings")
 django.setup()
 
-
 from archivebot.utils import (
     get_recent_changes_with_diff,
     fetch_current_wikitext_ptwiki,

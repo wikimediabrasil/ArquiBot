@@ -12,6 +12,13 @@ import json
 import html
 from django.conf import settings
 
+REQUEST_TIMEOUT = settings.REQUEST_TIMEOUT
+BOT_NAME = settings.BOT_NAME
+BOT_VERSION = settings.BOT_VERSION
+BOT_EMAIL = settings.BOT_EMAIL
+
+WIKIPEDIA_API_URL = settings.WIKIPEDIA_API_URL
+
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s %(levelname)s: %(message)s',
@@ -21,10 +28,8 @@ logging.basicConfig(
     ]
 )
 
-WIKIPEDIA_API_URL = "https://test.wikipedia.org/w/api.php"
-
-def get_recent_changes_with_diff(grclimit=50, last_hours=1):
-    # Fetch recent changes with diffs using generator=recentchanges and rvdiffto=prev.
+def get_recent_changes_with_diff(grclimit, last_hours=1):
+    """Fetch recent changes with diffs using generator=recentchanges, rvdiffto=prev and grccontinue."""
     end_time = now().astimezone()
     start_time = end_time - timedelta(hours=last_hours)
 
@@ -33,7 +38,7 @@ def get_recent_changes_with_diff(grclimit=50, last_hours=1):
         "format": "json",
         "generator": "recentchanges",
         "grcnamespace": 0,
-        "grclimit": grclimit,
+        "grclimit": "max",
         "grcshow": "!bot",
         "grcstart": end_time.isoformat(),
         "grcend": start_time.isoformat(),
@@ -43,17 +48,28 @@ def get_recent_changes_with_diff(grclimit=50, last_hours=1):
     }
 
     HEADERS = {
-        "User-Agent": "Arquibot/1.0 (naomi.ibeh69@gmail.com)"
+        "User-Agent": f"{BOT_NAME}/{BOT_VERSION} ({BOT_EMAIL})"
     }
 
-    response = requests.get(WIKIPEDIA_API_URL, params=params, headers=HEADERS)
-    #response = requests.get(WIKIPEDIA_API_URL, params=params)
-    data = response.json()
-    pages = data.get("query", {}).get("pages", {})
-    return pages.values()
+    all_pages = {}
 
-def fetch_current_wikitext_ptwiki(title: str, api_url: str = WIKIPEDIA_API_URL, timeout: int = 15) -> str | None:
-    """Fetch full current wikitext for an article from wikipedia.org."""
+    while True:
+        response = requests.get(WIKIPEDIA_API_URL, params=params, headers=HEADERS)
+        data = response.json()
+
+        pages = data.get("query", {}).get("pages", {})
+        all_pages.update(pages)  # merge new batch into results
+
+        # Handle continuation
+        if "continue" in data:
+            params.update(data["continue"])  # adds "grccontinue"
+        else:
+            break
+
+    return all_pages.values()
+
+def fetch_current_wikitext_ptwiki(title: str, api_url: str = WIKIPEDIA_API_URL, timeout: int=REQUEST_TIMEOUT) -> str | None:
+    # Fetch full current wikitext for an article from wikipedia.org.
     params = {
         "action": "query",
         "format": "json",
@@ -65,8 +81,9 @@ def fetch_current_wikitext_ptwiki(title: str, api_url: str = WIKIPEDIA_API_URL, 
     }
     try:
         HEADERS = {
-            "User-Agent": "Arquibot/1.0 (naomi.ibeh69@gmail.com)"
+            "User-Agent": f"{BOT_NAME}/{BOT_VERSION} ({BOT_EMAIL})"
         }
+
         r = requests.get(api_url, params=params, headers=HEADERS, timeout=timeout)
         r.raise_for_status()
         data = r.json()
@@ -118,7 +135,7 @@ def extract_citar_templates_mwparser(wikitext):
         if template.name.strip().lower().startswith("citar ")
     ]
 
-def is_url_alive(url, timeout=15):
+def is_url_alive(url, timeout: int=REQUEST_TIMEOUT):
     """Checks if a URL should be archived (everything except 404)."""
     try:
         response = requests.head(url, allow_redirects=True, timeout=timeout)
@@ -132,12 +149,10 @@ def archive_url(url):
     """Try to archive a URL once, with detailed logging."""
     logging.info(f"Attempting to archive URL: {url}")
 
-    # time.sleep()
-
     try:
         save_api = WaybackMachineSaveAPI(
             url,
-            user_agent="ptwiki-archivebot/1.0 (https://pt.wikipedia.org/wiki/User:YourBotUsername)"
+            "User-Agent": f"{BOT_NAME}/{BOT_VERSION} ({BOT_EMAIL})"
         )
         archive = save_api.save()
         if hasattr(archive, "archive_url") and archive.archive_url:
@@ -277,7 +292,7 @@ def update_archived_templates_in_article(title: str, archived_url_map: dict, edi
     Returns:
         tuple: (success: bool, message: str)
     """
-    API_BASE = "https://test.wikipedia.org/w/rest.php/v1/page/"
+    API_BASE = settings.API_BASE
     token = os.environ.get("ARQUIBOT_TOKEN")
     if not token:
         return False, "Missing ARQUIBOT_TOKEN environment variable."
@@ -285,7 +300,7 @@ def update_archived_templates_in_article(title: str, archived_url_map: dict, edi
     headers = {
         "Authorization": f"Bearer {token}",
         "Content-Type": "application/json",
-        "User-Agent": "Arquibot/0.1"
+        "User-Agent": f"{BOT_NAME}/{BOT_VERSION}"
     }
 
     # Step 1: Fetch current wikitext for the article
@@ -349,7 +364,7 @@ def run_archive_bot(interval_hours: int = 24):
     logging.info("Archive Bot started.")
 
     # Fetch recent changes
-    recent_changes = get_recent_changes_with_diff(grclimit=50, last_hours=1) # recent_changes = get_recent_changes_with_diff(grclimit=50, last_hours=interval_hours)
+    recent_changes = get_recent_changes_with_diff(grclimit, last_hours) # recent_changes = get_recent_changes_with_diff(grclimit=50, last_hours=interval_hours)
 
     if not recent_changes:
         logging.info("No recent changes found.")
@@ -408,13 +423,7 @@ def run_archive_bot(interval_hours: int = 24):
         processed_urls = set()
 
         for url, templates in url_to_templates.items():
-            if url.lower().startswith((
-                "http://web.archive.org",
-                "https://web.archive.org",
-                "https://doi.org",
-                "http://doi.org",
-                "https://dx.doi.org"
-            )):
+            if url.lower().startswith(settings.SKIPPED_URL_PREFIXES):
                 continue
 
             if url in processed_urls:
