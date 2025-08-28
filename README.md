@@ -32,7 +32,7 @@ How To Use
 
 4. Set up environment variables. Create a .env file in the project root with:
 
-    # Wikimedia API token (for editing articles)
+    Wikimedia API token (to allow for editing articles)
     ARQUIBOT_TOKEN=your_wikimedia_oauth_token_here
 
     Then go to the settings.py file and add your preferred int values for the variables
