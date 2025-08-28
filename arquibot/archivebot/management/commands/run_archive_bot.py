@@ -17,7 +17,7 @@ class Command(BaseCommand):
         parser.add_argument(
             "--interval",
             type=int,
-            default=24,  # default now is 24 hours
+            default=168,  # default now is 168(1 week) hours
             help="Interval in hours between bot runs (default: 24)"
         )
 

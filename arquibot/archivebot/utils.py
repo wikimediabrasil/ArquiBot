@@ -361,7 +361,7 @@ def update_archived_templates_in_article(title: str, archived_url_map: dict, edi
         return False, f"Failed to commit edit: {e}"
 
 
-def run_archive_bot(interval_hours: int = 24):
+def run_archive_bot(interval_hours: int = 168):
     logging.info("Archive Bot started.")
 
     # Fetch recent changes
