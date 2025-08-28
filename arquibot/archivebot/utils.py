@@ -12,6 +12,8 @@ import json
 import html
 from django.conf import settings
 
+LAST_HOURS = settings.LAST_HOURS
+GRCLIMIT = settings.GRCLIMIT
 REQUEST_TIMEOUT = settings.REQUEST_TIMEOUT
 BOT_NAME = settings.BOT_NAME
 BOT_VERSION = settings.BOT_VERSION
@@ -28,7 +30,7 @@ logging.basicConfig(
     ]
 )
 
-def get_recent_changes_with_diff(grclimit, last_hours=1):
+def get_recent_changes_with_diff(last_hours=LAST_HOURS):
     """Fetch recent changes with diffs using generator=recentchanges, rvdiffto=prev and grccontinue."""
     end_time = now().astimezone()
     start_time = end_time - timedelta(hours=last_hours)
@@ -364,7 +366,7 @@ def run_archive_bot(interval_hours: int = 24):
     logging.info("Archive Bot started.")
 
     # Fetch recent changes
-    recent_changes = get_recent_changes_with_diff(grclimit, last_hours) # recent_changes = get_recent_changes_with_diff(grclimit=50, last_hours=interval_hours)
+    recent_changes = get_recent_changes_with_diff(grclimit=GRCLIMIT, last_hours=LAST_HOURS) # recent_changes = get_recent_changes_with_diff(grclimit=50, last_hours=interval_hours)
 
     if not recent_changes:
         logging.info("No recent changes found.")
