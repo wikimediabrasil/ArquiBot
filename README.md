@@ -43,9 +43,9 @@ HOW TO USE
 
    Fetch recent changes from Portuguese Wikipedia
 
-   Parse {{citar web}} citations
+   Parse {{citar}} citations
 
-   Archive unarchived/dead links
+   Archive unarchived links
 
    Log results in the database and log file
 
