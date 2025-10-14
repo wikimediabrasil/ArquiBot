@@ -14,13 +14,19 @@ from pathlib import Path
 
 import os
 from dotenv import load_dotenv
-load_dotenv()  # loads variables from .env
 
-ARQUIBOT_TOKEN = os.getenv("ARQUIBOT_TOKEN")
+load_dotenv()
 
-WIKIPEDIA_API_URL = os.getenv("WIKIPEDIA_API_URL", "https://pt.wikipedia.org/w/api.php")
-API_BASE = os.getenv("API_BASE", "https://pt.wikipedia.org/w/rest.php/v1/page/")
+ARQUIBOT_TOKEN = os.environ["ARQUIBOT_TOKEN"]
+WIKIPEDIA_URL = os.environ["WIKIPEDIA_URL"]
+USER_AGENT = os.environ["USER_AGENT"]
+
+if WIKIPEDIA_URL.endswith("/"):
+    raise ValueError("WIKIPEDIA_URL must not end with slash")
+
 REQUEST_TIMEOUT = int(os.getenv("REQUEST_TIMEOUT", 15))
+LAST_HOURS = int(os.getenv("LAST_HOURS", 1))
+
 SKIPPED_URL_PREFIXES = [
     "http://web.archive.org",
     "https://web.archive.org",
@@ -28,10 +34,6 @@ SKIPPED_URL_PREFIXES = [
     "http://doi.org",
     "https://dx.doi.org"
 ]
-BOT_NAME = "Arquibot"
-BOT_VERSION = "1.0"
-BOT_EMAIL = "naomi.ibeh69@gmail.com"
-LAST_HOURS = int(os.getenv("LAST_HOURS", 1))
 
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
@@ -42,10 +44,10 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # See https://docs.djangoproject.com/en/5.2/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = 'django-insecure-u#-ctc*u$f=4ypw$5+d&6ynhhg^40rv@a%@uf8a5p&g-@px83!'
+SECRET_KEY = os.environ["SECRET_KEY"]
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
+DEBUG = os.environ["DEBUG"] == "True"
 
 ALLOWED_HOSTS = []
 
@@ -101,6 +103,43 @@ DATABASES = {
         'ENGINE': 'django.db.backends.sqlite3',
         'NAME': BASE_DIR / 'db.sqlite3',
     }
+}
+
+LOGGING = {
+    "version": 1,
+    "disable_existing_loggers": False,
+    "formatters": {
+        "simple": {"format": "%(levelname)s:%(module)s:%(funcName)s #%(lineno)d %(message)s"},
+        "complete": {
+            "format": "%(asctime)s %(levelname)s:%(module)s %(process)d %(lineno)d %(message)s"
+        },
+        "django": {"format": "%(asctime)s %(levelname)s: %(message)s"},
+    },
+    "handlers": {
+        "console": {
+            "class": "logging.StreamHandler",
+            "formatter": "simple",
+        },
+        "django": {
+            "class": "logging.StreamHandler",
+            "formatter": "django",
+        },
+        "file": {
+            "class": "logging.FileHandler",
+            "filename": "archivebot.log",
+            "formatter": "django",
+        },
+    },
+    "loggers": {
+        "django": {
+            "handlers": ["django"],
+            "level": "INFO",
+        },
+        "arquibot": {
+            "handlers": ["django", "file"],
+            "level": "INFO",
+        },
+    },
 }
 
 
