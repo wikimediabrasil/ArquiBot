@@ -1,9 +1,18 @@
 # ArquiBot
 
-Arquibot is a Wikipedia archive bot built with Django for the Wikimedia Brazil community.
+Arquibot is a Wikipedia archive bot built with Django for the Brazilian Wikimedia community.
+
 It monitors Portuguese Wikipedia (ptwiki) for new or unarchived external links in {{citar}} templates, automatically archives them using the Wayback Machine, and updates the articles with properly formatted archived citations. The bot also logs statistics into a Django database and provides a web interface for monitoring activity.
 
-FEATURES
+## Running locally
+
+Copy `.env.sample` to `.env` and provide the environment variables.
+
+To authenticate it locally, you will need to use the developer access. Request an access token at <https://api.wikimedia.org/wiki/Special:AppManagement>, click on "Create key". You should ask for a **Personal API token**, allow it to create and edit items and save. Copy the **Access token** to fill `ARQUIBOT_TOKEN`.
+
+Setup a python virtual environment using `requirements.txt`.
+
+## FEATURES
 
 Monitors recent changes on Portuguese Wikipedia
 
