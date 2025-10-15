@@ -125,17 +125,20 @@ def extract_inserted_wikitext(diff_html, revision=None, full_wikitext=None):
 def extract_citar_templates_mwparser(wikitext):
     """Use mwparserfromhell to extract all citar templates"""
     wikicode = mwparserfromhell.parse(wikitext)
-    return [
+    result = [
         template for template in wikicode.filter_templates()
         if template.name.strip().lower().startswith("citar ")
     ]
+    logger.debug(f"citar templates extracted ({len(result)}): {result}")
+    return result
 
 def is_url_alive(url, timeout: int=REQUEST_TIMEOUT):
     """Checks if a URL is alive (2xx or 3xx status)."""
     try:
         response = requests.head(url, allow_redirects=True, timeout=timeout)
         logger.info(f"Checked URL {url}, status code: {response.status_code}")
-        return response.status_code < 400
+        # we are ignoring 401, 402 and 403
+        return response.status_code < 404
     except requests.RequestException as e:
         logger.warning(f"URL check failed for {url}: {str(e)}")
         return False
@@ -177,7 +180,7 @@ def build_updated_template(template_name, fields):
 
 def process_citation_template(title, template, archive_url, archive_date, url_is_dead=False):
     """Process the citation template"""
-    logger.info(f"Processing template for article: {title}")
+    logger.info(f"Processing template for article: {title} with archive url {archive_url}")
 
     param_names = [param.name.strip().lower() for param in template.params]
     if 'arquivourl' in param_names or 'wayb' in param_names:
@@ -255,7 +258,7 @@ def get_page_data(title: str):
         logger.error(f"Failed to fetch article '{title}': {e}")
         raise e
 
-def update_archived_templates_in_article(title: str, archived_url_map: dict, edit_comment: str = "Update archived URLs via bot"):
+def update_archived_templates_in_article(title: str, archived_url_map: dict):
     """
     Fetch the Wikipedia page, replace citation templates with archived versions where available,
     and commit the updated wikitext back to the wiki.
@@ -282,6 +285,8 @@ def update_archived_templates_in_article(title: str, archived_url_map: dict, edi
     templates = wikicode.filter_templates()
     changed = False
 
+    urls_archived = set()
+
     # Step 3: Iterate over citation templates and replace if archived version exists
     for template in templates:
         if not template.name.lower().startswith("citar "):
@@ -299,6 +304,7 @@ def update_archived_templates_in_article(title: str, archived_url_map: dict, edi
                 new_template = mwparserfromhell.parse(archived_template_str).filter_templates()[0]
                 wikicode.replace(template, new_template)
                 changed = True
+                urls_archived.add(url)
             except Exception as e:
                 # Log parsing errors but continue
                 logger.error(f"Error parsing archived template for URL {url}: {e}")
@@ -307,10 +313,13 @@ def update_archived_templates_in_article(title: str, archived_url_map: dict, edi
         return False, "No archived templates were applied. Article unchanged."
 
     # Step 4: Commit updated wikitext back to Wikipedia
+    count = len(urls_archived)
+    word = "URLs" if count > 1 else "URL"
+    comment = f"Arquivamento de {count} {word}"
 
     try:
         client = WikipediaRestClient(title)
-        client.edit(new_source=str(wikicode), comment=edit_comment, latest_id=latest_id)
+        client.edit(new_source=str(wikicode), comment=comment, latest_id=latest_id)
         return True, f"Successfully updated archived templates in '{title}'."
     except Exception as e:
         return False, f"Failed to commit edit: {e}"
@@ -342,6 +351,7 @@ def archived_url_map_from_wikitext(initial_archived_url_map, wikitext, title):
                 url_to_templates.setdefault(url, []).append(tmpl)
 
     processed_urls = set()
+    logger.debug(f"url_to_templates: {url_to_templates}")
 
     for url, templates in url_to_templates.items():
         if any([url.lower().startswith(prefix) for prefix in SKIPPED_URL_PREFIXES]):
@@ -388,7 +398,7 @@ def archived_url_map_from_wikitext(initial_archived_url_map, wikitext, title):
         if archived:
             logger.info(f"Archived URL added to template: {url}")
 
-        return archived_url_map
+    return archived_url_map
 
 
 def run_archive_bot(interval_hours: int = 168):
