@@ -249,15 +249,6 @@ def admin_panel_check_func(url: str, archived_url_map: dict) -> str | None:
     """
     return archived_url_map.get(url)
 
-def get_page_data(title: str):
-    try:
-        resp = requests.get(REST_API + "/page/" + quote(title).replace("/", "%2F"), headers=HEADERS)
-        resp.raise_for_status()
-        return resp.json()
-    except Exception as e:
-        logger.error(f"Failed to fetch article '{title}': {e}")
-        raise e
-
 def update_archived_templates_in_article(title: str, archived_url_map: dict):
     """
     Fetch the Wikipedia page, replace citation templates with archived versions where available,
@@ -274,7 +265,8 @@ def update_archived_templates_in_article(title: str, archived_url_map: dict):
     if not hasattr(archived_url_map, "values") or not archived_url_map.values():
         return False, "No templates to update"
 
-    page_data = get_page_data(title)
+    client = WikipediaRestClient(title)
+    page_data = client.page_data()
     wikitext = page_data.get("source", "")
     latest_id = page_data.get("latest", {}).get("id")
     if not wikitext or not latest_id:
@@ -318,7 +310,6 @@ def update_archived_templates_in_article(title: str, archived_url_map: dict):
     comment = f"Arquivamento de {count} {word}"
 
     try:
-        client = WikipediaRestClient(title)
         client.edit(new_source=str(wikicode), comment=comment, latest_id=latest_id)
         return True, f"Successfully updated archived templates in '{title}'."
     except Exception as e:
@@ -328,8 +319,7 @@ def update_archived_templates_in_article(title: str, archived_url_map: dict):
 def run_article(title):
     logger.info("Archive Bot started.")
     logger.info(f"running on one page: {title}")
-    page_data = get_page_data(title)
-    wikitext = page_data.get("source", "")
+    wikitext = WikipediaRestClient(title).source()
     archived_url_map = archived_url_map_from_wikitext({}, wikitext, title)
     success, msg = update_archived_templates_in_article(title, archived_url_map)
     logger.info(f"Article update result for {title}: {msg}")

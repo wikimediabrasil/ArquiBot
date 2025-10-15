@@ -35,3 +35,14 @@ class WikipediaRestClient(WikipediaClient):
             data=json.dumps(payload),
         )
         response.raise_for_status()
+
+    def page_data(self):
+        response = requests.get(
+            self.endpoint(),
+            headers=self.HEADERS,
+        )
+        response.raise_for_status()
+        return response.json()
+
+    def source(self):
+        return self.page_data().get("source", "")
