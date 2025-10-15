@@ -521,6 +521,7 @@ class TestUtils(TestCase):
         # Assert BotRunStats update_or_create called (exception handled)
         self.assertTrue(mock_stats_update.called)
 
+    @patch("archivebot.utils.requests.get")
     @patch("archivebot.utils.logger.warning")
     @patch("archivebot.utils.ArchivedCitation.objects.create")
     @patch("archivebot.utils.is_url_alive")
@@ -539,10 +540,15 @@ class TestUtils(TestCase):
         mock_is_alive,
         mock_archived_citation_create,
         mock_log_warn,
+        mock_get,
     ):
         mock_recent_changes.return_value = [
             {"title": "TestPage", "revisions": [{"diff": {"*": '<ins>{{Citar web|url=https://failarchive.com}}</ins>'}}]},
         ]
+        mock_get.return_value.json.return_value = {
+            "source": "{{Citar web|url=https://failarchive.com}}",
+            "latest": {"id": 12345}
+        }
 
         mock_archived_citation_create.side_effect = Exception("DB save fail")
         mock_archive_url.return_value = "http://web.archive.org/web/20250115033343/https://pt.wikipedia.org"
