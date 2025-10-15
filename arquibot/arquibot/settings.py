@@ -137,7 +137,7 @@ LOGGING = {
         },
         "arquibot": {
             "handlers": ["django", "file"],
-            "level": "INFO",
+            "level": os.environ.get("LOG_LEVEL", "INFO"),
         },
     },
 }

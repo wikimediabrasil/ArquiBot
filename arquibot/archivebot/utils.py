@@ -1,5 +1,5 @@
 import requests
-import logging as logginglib
+import logging
 import traceback
 import mwparserfromhell
 from bs4 import BeautifulSoup
@@ -22,14 +22,13 @@ ARQUIBOT_TOKEN = settings.ARQUIBOT_TOKEN
 ACTION_API = WIKIPEDIA_URL + "/w/api.php"
 REST_API = WIKIPEDIA_URL + "/w/rest.php/v1"
 
-logging = logginglib.getLogger("arquibot")
+logger = logging.getLogger("arquibot")
 
 HEADERS = {
     "Authorization": f"Bearer {ARQUIBOT_TOKEN}",
     "User-Agent": USER_AGENT,
     "Content-Type": "application/json",
 }
-WAYBACK_PY_MAX_TRIES = 3
 
 
 def get_recent_changes_with_diff(last_hours=LAST_HOURS):
@@ -91,7 +90,7 @@ def fetch_current_wikitext_ptwiki(title: str, api_url: str = ACTION_API, timeout
             return None
         return revs[0]["slots"]["main"]["content"]
     except Exception as e:
-        logging.warning(f"Failed to fetch full wikitext for '{title}': {e}")
+        logger.warning(f"Failed to fetch full wikitext for '{title}': {e}")
         return None
 
 def extract_inserted_wikitext(diff_html, revision=None, full_wikitext=None):
@@ -135,10 +134,10 @@ def is_url_alive(url, timeout: int=REQUEST_TIMEOUT):
     """Checks if a URL is alive (2xx or 3xx status)."""
     try:
         response = requests.head(url, allow_redirects=True, timeout=timeout)
-        logging.info(f"Checked URL {url}, status code: {response.status_code}")
+        logger.info(f"Checked URL {url}, status code: {response.status_code}")
         return response.status_code < 400
     except requests.RequestException as e:
-        logging.warning(f"URL check failed for {url}: {str(e)}")
+        logger.warning(f"URL check failed for {url}: {str(e)}")
         return False
 
 def archive_url(url):
@@ -178,15 +177,15 @@ def build_updated_template(template_name, fields):
 
 def process_citation_template(title, template, archive_url, archive_date, url_is_dead=False):
     """Process the citation template"""
-    logging.info(f"Processing template for article: {title}")
+    logger.info(f"Processing template for article: {title}")
 
     param_names = [param.name.strip().lower() for param in template.params]
     if 'arquivourl' in param_names or 'wayb' in param_names:
-        logging.info(f"Skipping {title}: Template already has arquivourl or wayb")
+        logger.info(f"Skipping {title}: Template already has arquivourl or wayb")
         return None
 
     if not template.has("url") or not template.get("url").value.strip():
-        logging.warning(f"Skipping ArchivedCitation for {title}: Missing or empty 'url'")
+        logger.warning(f"Skipping ArchivedCitation for {title}: Missing or empty 'url'")
         return None
 
     url = template.get("url").value.strip()
@@ -214,10 +213,10 @@ def process_citation_template(title, template, archive_url, archive_date, url_is
             arquivodata=archive_date,
             urlmorta=url_is_dead
         )
-        logging.info(f"Saved ArchivedCitation for {title}")
+        logger.info(f"Saved ArchivedCitation for {title}")
     except Exception as e:
-        logging.warning(f"Failed to save ArchivedCitation for {title}: {e}")
-        logging.debug(traceback.format_exc())
+        logger.warning(f"Failed to save ArchivedCitation for {title}: {e}")
+        logger.debug(traceback.format_exc())
 
     return updated
 
@@ -253,7 +252,7 @@ def get_page_data(title: str):
         resp.raise_for_status()
         return resp.json()
     except Exception as e:
-        logging.error(f"Failed to fetch article '{title}': {e}")
+        logger.error(f"Failed to fetch article '{title}': {e}")
         raise e
 
 def update_archived_templates_in_article(title: str, archived_url_map: dict, edit_comment: str = "Update archived URLs via bot"):
@@ -302,7 +301,7 @@ def update_archived_templates_in_article(title: str, archived_url_map: dict, edi
                 changed = True
             except Exception as e:
                 # Log parsing errors but continue
-                logging.error(f"Error parsing archived template for URL {url}: {e}")
+                logger.error(f"Error parsing archived template for URL {url}: {e}")
 
     if not changed:
         return False, "No archived templates were applied. Article unchanged."
@@ -318,13 +317,13 @@ def update_archived_templates_in_article(title: str, archived_url_map: dict, edi
 
 
 def run_article(title):
-    logging.info("Archive Bot started.")
-    logging.info(f"running on one page: {title}")
+    logger.info("Archive Bot started.")
+    logger.info(f"running on one page: {title}")
     page_data = get_page_data(title)
     wikitext = page_data.get("source", "")
     archived_url_map = archived_url_map_from_wikitext({}, wikitext, title)
     success, msg = update_archived_templates_in_article(title, archived_url_map)
-    logging.info(f"Article update result for {title}: {msg}")
+    logger.info(f"Article update result for {title}: {msg}")
 
 
 def archived_url_map_from_wikitext(initial_archived_url_map, wikitext, title):
@@ -346,7 +345,7 @@ def archived_url_map_from_wikitext(initial_archived_url_map, wikitext, title):
 
     for url, templates in url_to_templates.items():
         if any([url.lower().startswith(prefix) for prefix in SKIPPED_URL_PREFIXES]):
-            logging.info(f"Skipping DOI or archived URL: {url}")
+            logger.info(f"Skipping DOI or archived URL: {url}")
             continue
 
         if url in processed_urls:
@@ -360,7 +359,7 @@ def archived_url_map_from_wikitext(initial_archived_url_map, wikitext, title):
         ]
 
         if not templates_to_process:
-            logging.info(f"{url} in {title} already archived.")
+            logger.info(f"{url} in {title} already archived.")
             continue
 
         # Archive the URL if not in DB
@@ -370,7 +369,7 @@ def archived_url_map_from_wikitext(initial_archived_url_map, wikitext, title):
         url_is_dead = not is_url_alive(url)
 
         if not archive_link:
-            logging.info(f"Archiving failed for {url}")
+            logger.info(f"Archiving failed for {url}")
             continue
 
         archived = False
@@ -387,29 +386,29 @@ def archived_url_map_from_wikitext(initial_archived_url_map, wikitext, title):
                 archived_url_map[url] = str(updated)
 
         if archived:
-            logging.info(f"Archived URL added to template: {url}")
+            logger.info(f"Archived URL added to template: {url}")
 
         return archived_url_map
 
 
 def run_archive_bot(interval_hours: int = 168):
-    logging.info("Archive Bot started.")
+    logger.info("Archive Bot started.")
 
     # Fetch recent changes
     recent_changes = get_recent_changes_with_diff(last_hours=interval_hours) # recent_changes = get_recent_changes_with_diff(grclimit=50, last_hours=interval_hours)
 
     if not recent_changes:
-        logging.info("No recent changes found.")
+        logger.info("No recent changes found.")
         return
 
-    logging.info(f"Found {len(recent_changes)} recent changes to process.")
+    logger.info(f"Found {len(recent_changes)} recent changes to process.")
 
     # Preload all archived URLs from the DB
     archived_url_map = {
         entry.url: entry.updated_template
         for entry in ArchivedCitation.objects.all()
     }
-    logging.info(f"Loaded {len(archived_url_map)} archived URLs from database.")
+    logger.info(f"Loaded {len(archived_url_map)} archived URLs from database.")
 
     unique_articles = set()
     total_urls = 0
@@ -420,7 +419,7 @@ def run_archive_bot(interval_hours: int = 168):
         title = page.get("title")
         revisions = page.get("revisions", [])
         if not title or not revisions:
-            logging.warning(f"Skipping {title or 'Unknown'}: missing revision content")
+            logger.warning(f"Skipping {title or 'Unknown'}: missing revision content")
             continue
 
         rev = revisions[0]
@@ -433,7 +432,7 @@ def run_archive_bot(interval_hours: int = 168):
             # Last resort: fetch current wikitext from wiki
             content_to_scan = fetch_current_wikitext_ptwiki(title) or ""
             if not content_to_scan.strip():
-                logging.info(f"Skipping {title}: no content to scan")
+                logger.info(f"Skipping {title}: no content to scan")
                 continue
 
         unique_articles.add(title)
@@ -445,7 +444,7 @@ def run_archive_bot(interval_hours: int = 168):
         success, msg = update_archived_templates_in_article(title, archived_url_map)
         if success:
             real_edits_made += 1
-        logging.info(f"Article update result for {title}: {msg}")
+        logger.info(f"Article update result for {title}: {msg}")
 
     # Save bot stats
     try:
@@ -458,8 +457,8 @@ def run_archive_bot(interval_hours: int = 168):
                 "edits_made": real_edits_made,
             }
         )
-        logging.info(f"BotRunStats saved: Articles: {len(unique_articles)}, URLs checked: {total_urls}, URLs archived: {archived_count}, Edits made: {real_edits_made}")
+        logger.info(f"BotRunStats saved: Articles: {len(unique_articles)}, URLs checked: {total_urls}, URLs archived: {archived_count}, Edits made: {real_edits_made}")
     except Exception as e:
-        logging.error(f"Failed to save BotRunStats: {e}")
+        logger.error(f"Failed to save BotRunStats: {e}")
 
-    logging.info("Archive Bot finished.")
+    logger.info("Archive Bot finished.")

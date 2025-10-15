@@ -428,7 +428,7 @@ class TestUtils(TestCase):
     @patch("archivebot.utils.is_url_alive")
     @patch("archivebot.utils.archive_url")
     @patch("archivebot.utils.get_recent_changes_with_diff")
-    @patch("archivebot.utils.logging.info")
+    @patch("archivebot.utils.logger.info")
     @patch("archivebot.utils.process_citation_template")
     @patch("archivebot.utils.BotRunStats.objects.update_or_create")
     @patch("archivebot.utils.extract_inserted_wikitext")
@@ -521,7 +521,7 @@ class TestUtils(TestCase):
         # Assert BotRunStats update_or_create called (exception handled)
         self.assertTrue(mock_stats_update.called)
 
-    @patch("archivebot.utils.logging.warning")
+    @patch("archivebot.utils.logger.warning")
     @patch("archivebot.utils.ArchivedCitation.objects.create")
     @patch("archivebot.utils.is_url_alive")
     @patch("archivebot.utils.archive_url")
