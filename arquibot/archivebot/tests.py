@@ -484,7 +484,6 @@ class TestUtils(unittest.TestCase):
 
         mock_process_citation.side_effect = process_citation_side_effect
 
-        # ArchiveLog create raises exception on failarchive to test exception handling
         def archive_log_side_effect(*args, **kwargs):
             if kwargs.get("url") == "https://failarchive.com":
                 raise Exception("DB save fail")
@@ -508,8 +507,6 @@ class TestUtils(unittest.TestCase):
         mock_log_info.assert_any_call("Skipping DOI or archived URL: https://doi.org/example")
         mock_log_info.assert_any_call("Archiving failed for https://failarchive.com")
         mock_log_info.assert_any_call("Archived URL added to template: https://normal.com")
-
-        # Assert ArchiveLog create called, including failure case
 
         # Assert BotRunStats update_or_create called (exception handled)
         self.assertTrue(mock_stats_update.called)
@@ -535,12 +532,10 @@ class TestUtils(unittest.TestCase):
         mock_archived_citation_create,
         mock_log_warn,
     ):
-        # Setup minimal recent_changes with one URL to trigger ArchiveLog create
         mock_recent_changes.return_value = [
             {"title": "TestPage", "revisions": [{"diff": {"*": '<ins>{{Citar web|url=https://failarchive.com}}</ins>'}}]},
         ]
 
-        # Mocks to trigger ArchiveLog create raising Exception
         mock_archived_citation_create.side_effect = Exception("DB save fail")
         mock_archive_url.return_value = "https://myarchive.com"
         mock_is_alive.return_value = True
@@ -553,7 +548,6 @@ class TestUtils(unittest.TestCase):
         # Run the function
         run_archive_bot()
 
-        # Assert the warning log for ArchiveLog failure is called
         self.assertTrue(
             any("Failed to save ArchivedCitation" in call.args[0] for call in mock_log_warn.call_args_list),
             "ArchivedCitation create exception warning was not logged"

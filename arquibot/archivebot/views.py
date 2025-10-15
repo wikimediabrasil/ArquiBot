@@ -1,11 +1,10 @@
 from django.shortcuts import render
 from rest_framework.decorators import api_view
 from rest_framework.response import Response
-from django.db.models import Count
 from django.utils.timezone import now, timedelta
 from collections import defaultdict
-from .models import ArchiveLog, BotRunStats, ArchivedCitation
-from .serializers import ArchiveLogSerializer, BotRunStatsSerializer, ArchivedCitationSerializer
+from .models import BotRunStats, ArchivedCitation
+from .serializers import BotRunStatsSerializer, ArchivedCitationSerializer
 from rest_framework import generics
 
 
@@ -15,9 +14,9 @@ def combined_stats_api(request):
     stats = BotRunStats.objects.order_by('-run_date')[:30]
     stats_data = BotRunStatsSerializer(stats, many=True).data
 
-    # Recent Logs (ArchiveLog)
-    logs = ArchiveLog.objects.order_by('-timestamp')[:100]
-    logs_data = ArchiveLogSerializer(logs, many=True).data
+    # Recent Logs (ArchivedCitation)
+    logs = ArchivedCitation.objects.order_by('-timestamp')[:100]
+    logs_data = ArchivedCitationSerializer(logs, many=True).data
 
     return Response({
         "summary_stats": stats_data,
@@ -28,7 +27,7 @@ def stats_page(request):
     today = now().date()
     start_date = today - timedelta(days=6)
 
-    logs = ArchiveLog.objects.filter(timestamp__date__gte=start_date)
+    logs = ArchivedCitation.objects.filter(timestamp__date__gte=start_date)
     stats = defaultdict(lambda: {
         'articles': set(),
         'urls_checked': 0,
@@ -39,8 +38,7 @@ def stats_page(request):
         date_key = log.timestamp.date()
         stats[date_key]['articles'].add(log.article_title)
         stats[date_key]['urls_checked'] += 1
-        if log.status == 'archived':
-            stats[date_key]['urls_archived'] += 1
+        stats[date_key]['urls_archived'] += 1
 
     # Pull accurate edits_made from BotRunStats model
     stats_model_qs = BotRunStats.objects.filter(run_date__date__gte=start_date)

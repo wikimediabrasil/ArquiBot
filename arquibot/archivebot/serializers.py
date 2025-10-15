@@ -1,10 +1,5 @@
 from rest_framework import serializers
-from .models import ArchiveLog, BotRunStats, ArchivedCitation
-
-class ArchiveLogSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = ArchiveLog
-        fields = ['id', 'url', 'article_title', 'status', 'message', 'timestamp']
+from .models import BotRunStats, ArchivedCitation
 
 class BotRunStatsSerializer(serializers.ModelSerializer):
     class Meta:
