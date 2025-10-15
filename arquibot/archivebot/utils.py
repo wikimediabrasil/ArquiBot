@@ -6,10 +6,11 @@ import mwparserfromhell
 from bs4 import BeautifulSoup
 from django.utils.timezone import now
 from datetime import timedelta
-from waybackpy import WaybackMachineSaveAPI
 from urllib.parse import quote
 from django.conf import settings
+
 from .models import BotRunStats, ArchivedCitation
+from .archiving import ArchivedURL
 
 SKIPPED_URL_PREFIXES = settings.SKIPPED_URL_PREFIXES
 LAST_HOURS = settings.LAST_HOURS
@@ -141,40 +142,9 @@ def is_url_alive(url, timeout: int=REQUEST_TIMEOUT):
         return False
 
 def archive_url(url):
-    """Try to archive a URL once, with detailed logging."""
-    logging.info(f"Attempting to archive URL: {url}")
-
-    try:
-        save_api = WaybackMachineSaveAPI(
-            url,
-            USER_AGENT,
-            WAYBACK_PY_MAX_TRIES,
-        )
-        archive = save_api.save()
-        if hasattr(archive, "archive_url") and archive.archive_url:
-            logging.info(f"Archived via WaybackPy: {url} → {archive.archive_url}")
-            return archive.archive_url
-        else:
-            logging.warning(f"WaybackPy returned no archive_url for {url}")
-    except Exception as e:
-        logging.error(f"WaybackPy failed for {url}: {e}")
-
-    # Fallback to check if URL already archived
-    try:
-        logging.info(f"Trying fallback Wayback availability API for: {url}")
-        availability_resp = requests.get("https://archive.org/wayback/available", params={"url": url}, timeout=30)
-        data = availability_resp.json()
-        snapshot = data.get("archived_snapshots", {}).get("closest", {})
-        if snapshot.get("available"):
-            archive_url = snapshot.get("url")
-            logging.info(f"Found existing archive: {url} → {archive_url}")
-            return archive_url
-        else:
-            logging.warning(f"No archive found for: {url}")
-    except Exception as e:
-        logging.error(f"Exception in fallback availability API for {url}: {e}")
-
-    return None
+    arq = ArchivedURL(url)
+    arq.archive()
+    return arq.archive_url
 
 def extract_citar_templates_as_strings(text):
     """
@@ -219,9 +189,12 @@ def process_citation_template(title, template, archive_url, archive_date, url_is
         logging.warning(f"Skipping ArchivedCitation for {title}: Missing or empty 'url'")
         return None
 
+    url = template.get("url").value.strip()
+    arq = ArchivedURL.already_archived(url, archive_url)
+    timestamp = arq.archive_timestamp
+
     original_template = str(template)
-    template.add("arquivourl", archive_url)
-    template.add("arquivodata", archive_date.strftime("%Y-%m-%d"))
+    template.add("wayb", timestamp)
 
     if url_is_dead:
         template.add("urlmorta", "sim")
@@ -236,7 +209,7 @@ def process_citation_template(title, template, archive_url, archive_date, url_is
             article_title=title,
             original_template=original_template,
             updated_template=updated,
-            url=template.get("url").value.strip(),
+            url=url,
             arquivourl=archive_url,
             arquivodata=archive_date,
             urlmorta=url_is_dead
@@ -361,6 +334,8 @@ def run_article(title):
 
 def archived_url_map_from_wikitext(initial_archived_url_map, wikitext, title):
     archived_url_map = initial_archived_url_map
+    if not archived_url_map:
+        archived_url_map = {}
 
     citar_templates = extract_citar_templates_mwparser(wikitext)
 

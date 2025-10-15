@@ -6,6 +6,8 @@ import mwparserfromhell
 import os
 import json
 
+from django.test import TestCase
+
 from archivebot.utils import (
     get_recent_changes_with_diff,
     fetch_current_wikitext_ptwiki,
@@ -23,7 +25,9 @@ from archivebot.utils import (
     run_archive_bot
 )
 
-class TestUtils(unittest.TestCase):
+from .archiving import ArchivedURL
+
+class TestUtils(TestCase):
     #  fetch_current_wikitext_ptwiki tests
     @patch("archivebot.utils.requests.get")
     def test_successful_fetch(self, mock_get):
@@ -198,25 +202,25 @@ class TestUtils(unittest.TestCase):
 
     # archive_url tests
     @patch("archivebot.utils.requests.get")
-    @patch("archivebot.utils.WaybackMachineSaveAPI.save")
+    @patch("archivebot.archiving.WaybackMachineSaveAPI.save")
     def test_archive_url_success_and_fallback(self, mock_save, mock_get):
         # Original success test: WaybackPy returns archive_url
         mock_instance = Mock()
         mock_instance.archive_url = "https://web.archive.org/web/20230701/https://example.org"
         mock_save.return_value = None
-        with patch("archivebot.utils.WaybackMachineSaveAPI", return_value=mock_instance):
+        with patch("archivebot.archiving.WaybackMachineSaveAPI", return_value=mock_instance):
             result = archive_url("https://example.org")
             self.assertTrue(result.startswith("https://web.archive.org/web"))
 
     @patch("archivebot.utils.requests.get")
-    @patch("archivebot.utils.WaybackMachineSaveAPI.save")
+    @patch("archivebot.archiving.WaybackMachineSaveAPI.save")
     def test_archive_url_none_and_no_available(self, mock_save, mock_get):
         mock_save.return_value = None
         mock_get.side_effect = requests.RequestException()
         result = archive_url("https://noarchive.com")
         self.assertIsNone(result)
 
-    @patch("archivebot.utils.WaybackMachineSaveAPI")
+    @patch("archivebot.archiving.WaybackMachineSaveAPI")
     def test_archive_url_waybackpy_returns_no_archive_url(self, mock_wayback_class):
         # Setup mock instance with archive_url as None
         mock_instance = Mock()
@@ -232,7 +236,7 @@ class TestUtils(unittest.TestCase):
         self.assertTrue(any("WaybackPy returned no archive_url" in message for message in log_cm.output))
 
     @patch("archivebot.utils.requests.get")
-    @patch("archivebot.utils.WaybackMachineSaveAPI.save", side_effect=Exception("WaybackPy error"))
+    @patch("archivebot.archiving.WaybackMachineSaveAPI.save", side_effect=Exception("WaybackPy error"))
     def test_archive_url_waybackpy_exception(self, mock_save, mock_get):
         # WaybackPy raises exception → fallback triggered
         mock_get.return_value.json.return_value = {
@@ -247,7 +251,7 @@ class TestUtils(unittest.TestCase):
         self.assertEqual(result, "http://web.archive.org/web/20250815214522/http://brokenlink.com/")
 
     @patch("archivebot.utils.requests.get")
-    @patch("archivebot.utils.WaybackMachineSaveAPI.save", side_effect=Exception("Force fallback"))
+    @patch("archivebot.archiving.WaybackMachineSaveAPI.save", side_effect=Exception("Force fallback"))
     def test_archive_url_fallback_success(self, mock_save, mock_get):
         # Fallback returns available snapshot
         mock_get.return_value.json.return_value = {
@@ -262,7 +266,7 @@ class TestUtils(unittest.TestCase):
         self.assertEqual(result, "https://web.archive.org/web/20220101/https://fallback.com")
 
     @patch("archivebot.utils.requests.get")
-    @patch("archivebot.utils.WaybackMachineSaveAPI.save", side_effect=Exception("Force fallback"))
+    @patch("archivebot.archiving.WaybackMachineSaveAPI.save", side_effect=Exception("Force fallback"))
     def test_archive_url_fallback_no_archive_found(self, mock_save, mock_get):
         # Fallback returns no available archive
         mock_get.return_value.json.return_value = {
@@ -276,7 +280,7 @@ class TestUtils(unittest.TestCase):
         self.assertIsNone(result)
 
     @patch("archivebot.utils.requests.get", side_effect=Exception("Fallback API error"))
-    @patch("archivebot.utils.WaybackMachineSaveAPI.save", side_effect=Exception("Force fallback"))
+    @patch("archivebot.archiving.WaybackMachineSaveAPI.save", side_effect=Exception("Force fallback"))
     def test_archive_url_fallback_exception(self, mock_save, mock_get):
         # Fallback API itself fails
         result = archive_url("https://error.com")
@@ -288,7 +292,7 @@ class TestUtils(unittest.TestCase):
         mock_create = mock_model.objects.create
 
         # --- Existing test: normal processing ---
-        template_str = '{{Citar web|url=https://example.org}}'
+        template_str = '{{Citar web|url=https://pt.wikipedia.org/}}'
         page_title = "Test Page"
 
         wikicode = mwparserfromhell.parse(template_str)
@@ -297,21 +301,20 @@ class TestUtils(unittest.TestCase):
         updated_template = process_citation_template(
             title=page_title,
             template=tpl,
-            archive_url='https://web.archive.org/example',
+            archive_url='http://web.archive.org/web/20250115032356/https://pt.wikipedia.org/',
             archive_date=datetime.strptime('2025-07-17', "%Y-%m-%d").date(),
             url_is_dead=True
         )
 
-        self.assertIn("arquivourl=https://web.archive.org/example", updated_template)
-        self.assertIn("arquivodata=2025-07-17", updated_template)
+        self.assertIn("wayb=20250115032356", updated_template)
         self.assertIn("urlmorta=sim", updated_template)
 
         mock_create.assert_called_once_with(
             article_title='Test Page',
-            original_template='{{Citar web|url=https://example.org}}',
+            original_template='{{Citar web|url=https://pt.wikipedia.org/}}',
             updated_template=updated_template,
-            url='https://example.org',
-            arquivourl='https://web.archive.org/example',
+            url='https://pt.wikipedia.org/',
+            arquivourl='http://web.archive.org/web/20250115032356/https://pt.wikipedia.org/',
             arquivodata=datetime.strptime('2025-07-17', "%Y-%m-%d").date(),
             urlmorta=True
         )
@@ -319,14 +322,14 @@ class TestUtils(unittest.TestCase):
         mock_create.reset_mock()
 
         # --- New test case: skips if arquivourl or wayb already present ---
-        template_str2 = '{{Citar web|url=https://example.org|arquivourl=https://archive.org}}'
+        template_str2 = '{{Citar web|url=https://pt.wikipedia.org/|arquivourl=http://web.archive.org/web/20250115032356/https://pt.wikipedia.org/}}'
         wikicode2 = mwparserfromhell.parse(template_str2)
         tpl2 = wikicode2.filter_templates()[0]
 
         result2 = process_citation_template(
             title=page_title,
             template=tpl2,
-            archive_url='https://web.archive.org/example',
+            archive_url='http://web.archive.org/web/20250115032356/https://pt.wikipedia.org/',
             archive_date=datetime.strptime('2025-07-17', "%Y-%m-%d").date(),
             url_is_dead=False
         )
@@ -342,7 +345,7 @@ class TestUtils(unittest.TestCase):
             result3 = process_citation_template(
                 title=page_title,
                 template=tpl3,
-                archive_url='https://web.archive.org/example',
+                archive_url='http://web.archive.org/web/20250115032356/https://pt.wikipedia.org/',
                 archive_date=datetime.strptime('2025-07-17', "%Y-%m-%d").date(),
                 url_is_dead=False
             )
@@ -358,7 +361,7 @@ class TestUtils(unittest.TestCase):
         updated_template4 = process_citation_template(
             title=page_title,
             template=tpl4,
-            archive_url='https://web.archive.org/example',
+            archive_url='http://web.archive.org/web/20250115032356/https://pt.wikipedia.org/',
             archive_date=datetime.strptime('2025-07-17', "%Y-%m-%d").date(),
             url_is_dead=False
         )
@@ -378,11 +381,11 @@ class TestUtils(unittest.TestCase):
             updated_template5 = process_citation_template(
                 title=page_title,
                 template=tpl5,
-                archive_url='https://web.archive.org/example',
+                archive_url='http://web.archive.org/web/20250115032356/https://pt.wikipedia.org/',
                 archive_date=datetime.strptime('2025-07-17', "%Y-%m-%d").date(),
                 url_is_dead=True
             )
-            self.assertIn("arquivourl=https://web.archive.org/example", updated_template5)
+            self.assertIn("wayb=20250115032356", updated_template5)
         except Exception as e:
             self.fail(f"process_citation_template raised an exception when it shouldn't: {e}")
 
@@ -420,6 +423,7 @@ class TestUtils(unittest.TestCase):
         self.assertEqual(result[0]["revisions"][0]['diff']["*"], "+This is a test revision.")
 
     # run archive_bot tests
+    @patch("archivebot.utils.requests.get")
     @patch("archivebot.models.ArchivedCitation.objects.create")
     @patch("archivebot.utils.is_url_alive")
     @patch("archivebot.utils.archive_url")
@@ -438,6 +442,7 @@ class TestUtils(unittest.TestCase):
         mock_archive_url,
         mock_is_alive,
         mock_archive_log_create,
+        mock_get,
     ):
         # Setup diverse recent_changes input to cover all branches:
         mock_recent_changes.return_value = [
@@ -497,6 +502,11 @@ class TestUtils(unittest.TestCase):
 
         mock_stats_update.side_effect = bot_stats_side_effect
 
+        mock_get.return_value.json.return_value = {
+            "source": "{{Citar web|url=https://example.com}}",
+            "latest": {"id": 12345}
+        }
+
         # Run the function
         run_archive_bot()
 
@@ -516,7 +526,6 @@ class TestUtils(unittest.TestCase):
     @patch("archivebot.utils.is_url_alive")
     @patch("archivebot.utils.archive_url")
     @patch("archivebot.utils.get_recent_changes_with_diff")
-    @patch("archivebot.utils.logging.info")
     @patch("archivebot.utils.BotRunStats.objects.update_or_create")
     @patch("archivebot.utils.extract_inserted_wikitext")
     @patch("archivebot.utils.extract_citar_templates_mwparser")
@@ -525,7 +534,6 @@ class TestUtils(unittest.TestCase):
         mock_extract_citar,
         mock_extract_diff,
         mock_stats_update,
-        mock_log_info,
         mock_recent_changes,
         mock_archive_url,
         mock_is_alive,
@@ -537,7 +545,7 @@ class TestUtils(unittest.TestCase):
         ]
 
         mock_archived_citation_create.side_effect = Exception("DB save fail")
-        mock_archive_url.return_value = "https://myarchive.com"
+        mock_archive_url.return_value = "http://web.archive.org/web/20250115033343/https://pt.wikipedia.org"
         mock_is_alive.return_value = True
         mock_extract_diff.return_value = '<ins>{{Citar web|url=https://failarchive.com}}</ins>'
         mock_extract_citar.return_value = [
@@ -638,3 +646,9 @@ class TestUtils(unittest.TestCase):
         self.assertFalse(success)
         self.assertIn("Article unchanged", msg)
 
+
+class ArchivedURLTests(TestCase):
+    def test_timestamp(self):
+        a = ArchivedURL("https://pt.wikipedia.org")
+        a.archive_url = "http://web.archive.org/web/20250115033343/https://pt.wikipedia.org"
+        self.assertEqual(a.archive_timestamp, "20250115033343")
