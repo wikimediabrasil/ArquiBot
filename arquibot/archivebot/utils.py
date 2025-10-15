@@ -1,15 +1,15 @@
 import requests
 import logging as logginglib
 import traceback
+import json
+import mwparserfromhell
 from bs4 import BeautifulSoup
 from django.utils.timezone import now
 from datetime import timedelta
 from waybackpy import WaybackMachineSaveAPI
-import mwparserfromhell
-from .models import BotRunStats, ArchivedCitation
-import os
-import json
+from urllib.parse import quote
 from django.conf import settings
+from .models import BotRunStats, ArchivedCitation
 
 SKIPPED_URL_PREFIXES = settings.SKIPPED_URL_PREFIXES
 LAST_HOURS = settings.LAST_HOURS
@@ -28,6 +28,7 @@ HEADERS = {
     "User-Agent": USER_AGENT,
     "Content-Type": "application/json",
 }
+WAYBACK_PY_MAX_TRIES = 3
 
 
 def get_recent_changes_with_diff(last_hours=LAST_HOURS):
@@ -134,7 +135,6 @@ def is_url_alive(url, timeout: int=REQUEST_TIMEOUT):
     try:
         response = requests.head(url, allow_redirects=True, timeout=timeout)
         logging.info(f"Checked URL {url}, status code: {response.status_code}")
-        response.raise_for_status()
         return response.status_code < 400
     except requests.RequestException as e:
         logging.warning(f"URL check failed for {url}: {str(e)}")
@@ -148,6 +148,7 @@ def archive_url(url):
         save_api = WaybackMachineSaveAPI(
             url,
             USER_AGENT,
+            WAYBACK_PY_MAX_TRIES,
         )
         archive = save_api.save()
         if hasattr(archive, "archive_url") and archive.archive_url:
@@ -273,6 +274,14 @@ def admin_panel_check_func(url: str, archived_url_map: dict) -> str | None:
     """
     return archived_url_map.get(url)
 
+def get_page_data(title: str):
+    try:
+        resp = requests.get(REST_API + "/page/" + quote(title).replace("/", "%2F"), headers=HEADERS)
+        resp.raise_for_status()
+        return resp.json()
+    except Exception as e:
+        logging.error(f"Failed to fetch article '{title}': {e}")
+        raise e
 
 def update_archived_templates_in_article(title: str, archived_url_map: dict, edit_comment: str = "Update archived URLs via bot"):
     """
@@ -287,17 +296,10 @@ def update_archived_templates_in_article(title: str, archived_url_map: dict, edi
     Returns:
         tuple: (success: bool, message: str)
     """
-    if not archived_url_map.values():
+    if not hasattr(archived_url_map, "values") or not archived_url_map.values():
         return False, "No templates to update"
 
-    # Step 1: Fetch current wikitext for the article
-    try:
-        resp = requests.get(REST_API + "/page/" + title.replace(" ", "_"), headers=HEADERS)
-        resp.raise_for_status()
-    except Exception as e:
-        return False, f"Failed to fetch article '{title}': {e}"
-
-    page_data = resp.json()
+    page_data = get_page_data(title)
     wikitext = page_data.get("source", "")
     latest_id = page_data.get("latest", {}).get("id")
     if not wikitext or not latest_id:
@@ -347,6 +349,79 @@ def update_archived_templates_in_article(title: str, archived_url_map: dict, edi
         return False, f"Failed to commit edit: {e}"
 
 
+def run_article(title):
+    logging.info("Archive Bot started.")
+    logging.info(f"running on one page: {title}")
+    page_data = get_page_data(title)
+    wikitext = page_data.get("source", "")
+    archived_url_map = archived_url_map_from_wikitext({}, wikitext, title)
+    success, msg = update_archived_templates_in_article(title, archived_url_map)
+    logging.info(f"Article update result for {title}: {msg}")
+
+
+def archived_url_map_from_wikitext(initial_archived_url_map, wikitext, title):
+    archived_url_map = initial_archived_url_map
+
+    citar_templates = extract_citar_templates_mwparser(wikitext)
+
+    # Map URLs to templates
+    url_to_templates = {}
+    for tmpl in citar_templates:
+        if tmpl.has("url"):
+            url = str(tmpl.get("url").value).strip()
+            if url:
+                url_to_templates.setdefault(url, []).append(tmpl)
+
+    processed_urls = set()
+
+    for url, templates in url_to_templates.items():
+        if any([url.lower().startswith(prefix) for prefix in SKIPPED_URL_PREFIXES]):
+            logging.info(f"Skipping DOI or archived URL: {url}")
+            continue
+
+        if url in processed_urls:
+            continue
+        processed_urls.add(url)
+
+        # Skip templates already archived in DB
+        templates_to_process = [
+            tmpl for tmpl in templates
+            if url not in archived_url_map and not tmpl.has("arquivourl") and not tmpl.has("wayb")
+        ]
+
+        if not templates_to_process:
+            logging.info(f"{url} in {title} already archived.")
+            continue
+
+        # Archive the URL if not in DB
+        archive_link = archived_url_map.get(url)
+        if not archive_link:
+            archive_link = archive_url(url)
+        url_is_dead = not is_url_alive(url)
+
+        if not archive_link:
+            logging.info(f"Archiving failed for {url}")
+            continue
+
+        archived = False
+        for tmpl in templates_to_process:
+            updated = process_citation_template(
+                title=title,
+                template=tmpl,
+                archive_url=archive_link,
+                archive_date=now().date(),
+                url_is_dead=url_is_dead
+            )
+            if updated:
+                archived = True
+                archived_url_map[url] = str(updated)
+
+        if archived:
+            logging.info(f"Archived URL added to template: {url}")
+
+        return archived_url_map
+
+
 def run_archive_bot(interval_hours: int = 168):
     logging.info("Archive Bot started.")
 
@@ -394,67 +469,7 @@ def run_archive_bot(interval_hours: int = 168):
         unique_articles.add(title)
         real_edits_made += 1
 
-        # Parse templates
-        citar_templates = extract_citar_templates_mwparser(content_to_scan)
-        if not citar_templates:
-            continue
-
-        # Map URLs to templates
-        url_to_templates = {}
-        for tmpl in citar_templates:
-            if tmpl.has("url"):
-                url = str(tmpl.get("url").value).strip()
-                if url:
-                    url_to_templates.setdefault(url, []).append(tmpl)
-
-        processed_urls = set()
-
-        for url, templates in url_to_templates.items():
-            if any([url.lower().startswith(prefix) for prefix in SKIPPED_URL_PREFIXES]):
-                logging.info(f"Skipping DOI or archived URL: {url}")
-                continue
-
-            if url in processed_urls:
-                continue
-            processed_urls.add(url)
-            total_urls += 1
-
-            # Skip templates already archived in DB
-            templates_to_process = [
-                tmpl for tmpl in templates
-                if url not in archived_url_map and not tmpl.has("arquivourl") and not tmpl.has("wayb")
-            ]
-
-            if not templates_to_process:
-                logging.info(f"{url} in {title} already archived.")
-                continue
-
-            # Archive the URL if not in DB
-            archive_link = archived_url_map.get(url)
-            if not archive_link:
-                archive_link = archive_url(url)
-            url_is_dead = not is_url_alive(url)
-
-            if not archive_link:
-                logging.info(f"Archiving failed for {url}")
-                continue
-
-            archived = False
-            for tmpl in templates_to_process:
-                updated = process_citation_template(
-                    title=title,
-                    template=tmpl,
-                    archive_url=archive_link,
-                    archive_date=now().date(),
-                    url_is_dead=url_is_dead
-                )
-                if updated:
-                    archived = True
-                    archived_url_map[url] = str(updated)
-
-            if archived:
-                archived_count += 1
-                logging.info(f"Archived URL added to template: {url}")
+        archived_url_map = archived_url_map_from_wikitext(archived_url_map, content_to_scan, title)
 
         # Push updates to Wikipedia using preloaded archived_url_map
         success, msg = update_archived_templates_in_article(title, archived_url_map)

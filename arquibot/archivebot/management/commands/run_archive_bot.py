@@ -1,13 +1,7 @@
 from django.core.management.base import BaseCommand, CommandError
 from archivebot.utils import run_archive_bot
-from django.conf import settings
 import time
 import logging
-
-headers = {
-    "Authorization": f"Bearer {settings.ARQUIBOT_TOKEN}",
-    "User-Agent": "Arquibot/1.0 (naomi.ibeh69@gmail.com)"
-}
 
 
 class Command(BaseCommand):

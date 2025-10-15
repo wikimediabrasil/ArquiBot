@@ -6,11 +6,19 @@ It monitors Portuguese Wikipedia (ptwiki) for new or unarchived external links i
 
 ## Running locally
 
+Enter the `arquibot/` directory.
+
 Copy `.env.sample` to `.env` and provide the environment variables.
 
 To authenticate it locally, you will need to use the developer access. Request an access token at <https://api.wikimedia.org/wiki/Special:AppManagement>, click on "Create key". You should ask for a **Personal API token**, allow it to create and edit items and save. Copy the **Access token** to fill `ARQUIBOT_TOKEN`.
 
 Setup a python virtual environment using `requirements.txt`.
+
+### Available commands
+
+* `python3 manage.py runserver` to see the web page with statistics
+* `python3 manage.py run_archive_bot` to run for recent changes withing the last 24 hours
+* `python3 manage.py run_article TITLE` to run for a specific article
 
 ## FEATURES
 
