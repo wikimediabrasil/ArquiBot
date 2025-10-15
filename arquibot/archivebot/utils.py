@@ -1,7 +1,6 @@
 import requests
 import logging as logginglib
 import traceback
-import json
 import mwparserfromhell
 from bs4 import BeautifulSoup
 from django.utils.timezone import now
@@ -11,6 +10,7 @@ from django.conf import settings
 
 from .models import BotRunStats, ArchivedCitation
 from .archiving import ArchivedURL
+from .wikipedia import WikipediaRestClient
 
 SKIPPED_URL_PREFIXES = settings.SKIPPED_URL_PREFIXES
 LAST_HOURS = settings.LAST_HOURS
@@ -308,15 +308,10 @@ def update_archived_templates_in_article(title: str, archived_url_map: dict, edi
         return False, "No archived templates were applied. Article unchanged."
 
     # Step 4: Commit updated wikitext back to Wikipedia
-    payload = {
-        "source": str(wikicode),
-        "comment": edit_comment,
-        "latest": {"id": latest_id}
-    }
 
     try:
-        put_resp = requests.put(REST_API + "/page/" + title.replace(" ", "_"), headers=HEADERS, data=json.dumps(payload))
-        put_resp.raise_for_status()
+        client = WikipediaRestClient(title)
+        client.edit(new_source=str(wikicode), comment=edit_comment, latest_id=latest_id)
         return True, f"Successfully updated archived templates in '{title}'."
     except Exception as e:
         return False, f"Failed to commit edit: {e}"
