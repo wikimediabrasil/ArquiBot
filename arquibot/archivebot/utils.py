@@ -178,7 +178,7 @@ def build_updated_template(template_name, fields):
     parts.append('}}')
     return '|'.join(parts)
 
-def process_citation_template(title, template, archive_url, archive_date, url_is_dead=False):
+def process_citation_template(title, template, archive_url, url_is_dead=False):
     """Process the citation template"""
     logger.info(f"Processing template for article: {title} with archive url {archive_url}")
 
@@ -213,7 +213,6 @@ def process_citation_template(title, template, archive_url, archive_date, url_is
             updated_template=updated,
             url=url,
             arquivourl=archive_url,
-            arquivodata=archive_date,
             urlmorta=url_is_dead
         )
         logger.info(f"Saved ArchivedCitation for {title}")
@@ -378,7 +377,6 @@ def archived_url_map_from_wikitext(initial_archived_url_map, wikitext, title):
                 title=title,
                 template=tmpl,
                 archive_url=archive_link,
-                archive_date=now().date(),
                 url_is_dead=url_is_dead
             )
             if updated:

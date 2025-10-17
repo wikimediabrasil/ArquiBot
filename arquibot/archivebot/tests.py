@@ -175,12 +175,11 @@ class TestUtils(TestCase):
     def test_build_updated_template(self):
         fields = {
             "url": "https://example.org",
-            "arquivourl": "https://web.archive.org/save/https://example.org",
-            "arquivodata": "2023-01-01",
+            "wayb": "20250115032356",
         }
         result = build_updated_template("Citar web", fields)
         self.assertIn("url=https://example.org", result)
-        self.assertIn("arquivourl=https://web.archive.org/save/https://example.org", result)
+        self.assertIn("wayb=20250115032356", result)
 
     # extract_external_links_from_text tests
     def test_extract_external_links_from_text(self):
@@ -302,7 +301,6 @@ class TestUtils(TestCase):
             title=page_title,
             template=tpl,
             archive_url='http://web.archive.org/web/20250115032356/https://pt.wikipedia.org/',
-            archive_date=datetime.strptime('2025-07-17', "%Y-%m-%d").date(),
             url_is_dead=True
         )
 
@@ -315,7 +313,6 @@ class TestUtils(TestCase):
             updated_template=updated_template,
             url='https://pt.wikipedia.org/',
             arquivourl='http://web.archive.org/web/20250115032356/https://pt.wikipedia.org/',
-            arquivodata=datetime.strptime('2025-07-17', "%Y-%m-%d").date(),
             urlmorta=True
         )
 
@@ -330,7 +327,6 @@ class TestUtils(TestCase):
             title=page_title,
             template=tpl2,
             archive_url='http://web.archive.org/web/20250115032356/https://pt.wikipedia.org/',
-            archive_date=datetime.strptime('2025-07-17', "%Y-%m-%d").date(),
             url_is_dead=False
         )
 
@@ -346,7 +342,6 @@ class TestUtils(TestCase):
                 title=page_title,
                 template=tpl3,
                 archive_url='http://web.archive.org/web/20250115032356/https://pt.wikipedia.org/',
-                archive_date=datetime.strptime('2025-07-17', "%Y-%m-%d").date(),
                 url_is_dead=False
             )
 
@@ -362,7 +357,6 @@ class TestUtils(TestCase):
             title=page_title,
             template=tpl4,
             archive_url='http://web.archive.org/web/20250115032356/https://pt.wikipedia.org/',
-            archive_date=datetime.strptime('2025-07-17', "%Y-%m-%d").date(),
             url_is_dead=False
         )
 
@@ -382,7 +376,6 @@ class TestUtils(TestCase):
                 title=page_title,
                 template=tpl5,
                 archive_url='http://web.archive.org/web/20250115032356/https://pt.wikipedia.org/',
-                archive_date=datetime.strptime('2025-07-17', "%Y-%m-%d").date(),
                 url_is_dead=True
             )
             self.assertIn("wayb=20250115032356", updated_template5)
@@ -483,7 +476,7 @@ class TestUtils(TestCase):
         mock_is_alive.side_effect = lambda url: url != "https://failarchive.com"
 
         # process_citation_template returns True only for "https://normal.com"
-        def process_citation_side_effect(title, template, archive_url, archive_date, url_is_dead):
+        def process_citation_side_effect(title, template, archive_url, url_is_dead):
             url = template.get("url").value.strip()
             return url == "https://normal.com"
 

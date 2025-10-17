@@ -16,7 +16,6 @@ class ArchivedCitation(models.Model):
     updated_template = models.TextField()
     url = models.URLField()
     arquivourl = models.URLField(blank=True, null=True)
-    arquivodata = models.DateField(blank=True, null=True)
     urlmorta = models.BooleanField(default=False)
     timestamp = models.DateTimeField(auto_now_add=True)
 

@@ -11,4 +11,4 @@ class BotRunStatsAdmin(admin.ModelAdmin):
 class ArchivedCitationAdmin(admin.ModelAdmin):
     search_fields = ['article_title', 'url']
     list_filter = ['urlmorta', 'timestamp']
-    list_display = ['article_title', 'url', 'urlmorta', 'arquivourl', 'arquivodata', 'timestamp']
+    list_display = ['article_title', 'url', 'urlmorta', 'arquivourl', 'timestamp']
