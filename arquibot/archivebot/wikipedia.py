@@ -1,8 +1,12 @@
 import json
 import requests
+import logging
 from urllib.parse import quote
 from django.conf import settings
 
+from archivebot.models import ArticleCheck
+
+logger = logging.getLogger("arquibot")
 
 class WikipediaClient:
     HEADERS = {
@@ -13,17 +17,17 @@ class WikipediaClient:
 
 
 class WikipediaRestClient(WikipediaClient):
-    BASE = settings.WIKIPEDIA_URL + "/w/rest.php/v1"
-
-    def __init__(self, title):
-        self.title = title
+    def __init__(self, article: ArticleCheck):
+        self.article = article
 
     def endpoint(self):
         # `/` is a path delimiter but it needs to be a path argument
         # so we need to escape it manually
-        return self.BASE + "/page/" + quote(self.title).replace("/", "%2F")
+        base = self.article.wikipedia.rest_api()
+        return base + "/page/" + quote(self.article.title).replace("/", "%2F")
 
     def edit(self, new_source: str, comment: str, latest_id: str):
+        logger.debug(f"[{self.article}] sending edit request...")
         payload = {
             "source": new_source,
             "comment": comment,
@@ -35,8 +39,10 @@ class WikipediaRestClient(WikipediaClient):
             data=json.dumps(payload),
         )
         response.raise_for_status()
+        return response.json()
 
     def page_data(self):
+        logger.debug(f"[{self.article}] obtaining page data...")
         response = requests.get(
             self.endpoint(),
             headers=self.HEADERS,

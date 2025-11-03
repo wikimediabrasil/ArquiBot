@@ -18,11 +18,8 @@ from dotenv import load_dotenv
 load_dotenv()
 
 ARQUIBOT_TOKEN = os.environ["ARQUIBOT_TOKEN"]
-WIKIPEDIA_URL = os.environ["WIKIPEDIA_URL"]
+WIKIPEDIA_CODE = os.environ["WIKIPEDIA_CODE"]
 USER_AGENT = os.environ["USER_AGENT"]
-
-if WIKIPEDIA_URL.endswith("/"):
-    raise ValueError("WIKIPEDIA_URL must not end with slash")
 
 REQUEST_TIMEOUT = int(os.getenv("REQUEST_TIMEOUT", 15))
 LAST_HOURS = int(os.getenv("LAST_HOURS", 1))

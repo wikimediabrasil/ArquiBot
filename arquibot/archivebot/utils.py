@@ -1,26 +1,22 @@
 import requests
 import logging
-import traceback
 import mwparserfromhell
 from bs4 import BeautifulSoup
 from django.utils.timezone import now
 from datetime import timedelta
-from urllib.parse import quote
 from django.conf import settings
 
-from .models import BotRunStats, ArchivedCitation
-from .archiving import ArchivedURL
-from .wikipedia import WikipediaRestClient
+from archivebot.archiving import ArchivedURL
+from archivebot.wikipedia import WikipediaRestClient
+from archivebot.models import Wikipedia
+from archivebot.models import ArticleCheck
+from archivebot.models import UrlCheck
 
 SKIPPED_URL_PREFIXES = settings.SKIPPED_URL_PREFIXES
 LAST_HOURS = settings.LAST_HOURS
 REQUEST_TIMEOUT = settings.REQUEST_TIMEOUT
 USER_AGENT = settings.USER_AGENT
-WIKIPEDIA_URL = settings.WIKIPEDIA_URL
 ARQUIBOT_TOKEN = settings.ARQUIBOT_TOKEN
-
-ACTION_API = WIKIPEDIA_URL + "/w/api.php"
-REST_API = WIKIPEDIA_URL + "/w/rest.php/v1"
 
 logger = logging.getLogger("arquibot")
 
@@ -51,9 +47,10 @@ def get_recent_changes_with_diff(last_hours=LAST_HOURS):
     }
 
     all_pages = {}
+    wikipedia = Wikipedia.get()
 
     while True:
-        response = requests.get(ACTION_API, params=params, headers=HEADERS)
+        response = requests.get(wikipedia.action_api(), params=params, headers=HEADERS)
         data = response.json()
 
         pages = data.get("query", {}).get("pages", {})
@@ -67,7 +64,7 @@ def get_recent_changes_with_diff(last_hours=LAST_HOURS):
 
     return all_pages.values()
 
-def fetch_current_wikitext_ptwiki(title: str, api_url: str = ACTION_API, timeout: int=REQUEST_TIMEOUT) -> str | None:
+def fetch_current_wikitext_ptwiki(title: str, timeout: int=REQUEST_TIMEOUT) -> str | None:
     # Fetch full current wikitext for an article from wikipedia.org.
     params = {
         "action": "query",
@@ -78,8 +75,9 @@ def fetch_current_wikitext_ptwiki(title: str, api_url: str = ACTION_API, timeout
         "formatversion": 2,
         "titles": title,
     }
+    wikipedia = Wikipedia.get()
     try:
-        r = requests.get(api_url, params=params, headers=HEADERS, timeout=timeout)
+        r = requests.get(wikipedia.action_api(), params=params, headers=HEADERS, timeout=timeout)
         r.raise_for_status()
         data = r.json()
         pages = data.get("query", {}).get("pages", [])
@@ -195,7 +193,6 @@ def process_citation_template(title, template, archive_url, url_is_dead=False):
     arq = ArchivedURL.already_archived(url, archive_url)
     timestamp = arq.archive_timestamp
 
-    original_template = str(template)
     template.add("wayb", timestamp)
 
     if url_is_dead:
@@ -205,21 +202,6 @@ def process_citation_template(title, template, archive_url, url_is_dead=False):
             template.remove("urlmorta")
 
     updated = str(template)
-
-    try:
-        ArchivedCitation.objects.create(
-            article_title=title,
-            original_template=original_template,
-            updated_template=updated,
-            url=url,
-            arquivourl=archive_url,
-            urlmorta=url_is_dead
-        )
-        logger.info(f"Saved ArchivedCitation for {title}")
-    except Exception as e:
-        logger.warning(f"Failed to save ArchivedCitation for {title}: {e}")
-        logger.debug(traceback.format_exc())
-
     return updated
 
 def extract_external_links_from_text(text):
@@ -248,7 +230,7 @@ def admin_panel_check_func(url: str, archived_url_map: dict) -> str | None:
     """
     return archived_url_map.get(url)
 
-def update_archived_templates_in_article(title: str, archived_url_map: dict):
+def update_archived_templates_in_article(article: ArticleCheck, archived_url_map: dict):
     """
     Fetch the Wikipedia page, replace citation templates with archived versions where available,
     and commit the updated wikitext back to the wiki.
@@ -264,11 +246,12 @@ def update_archived_templates_in_article(title: str, archived_url_map: dict):
     if not hasattr(archived_url_map, "values") or not archived_url_map.values():
         return False, "No templates to update"
 
-    client = WikipediaRestClient(title)
+    client = WikipediaRestClient(article)
     page_data = client.page_data()
     wikitext = page_data.get("source", "")
     latest_id = page_data.get("latest", {}).get("id")
     if not wikitext or not latest_id:
+        logger.error(f"page_data={page_data}")
         return False, "Failed to get wikitext or revision ID."
 
     # Step 2: Parse wikitext with mwparserfromhell
@@ -309,8 +292,10 @@ def update_archived_templates_in_article(title: str, archived_url_map: dict):
     comment = f"Arquivamento de {count} {word}"
 
     try:
-        client.edit(new_source=str(wikicode), comment=comment, latest_id=latest_id)
-        return True, f"Successfully updated archived templates in '{title}'."
+        data = client.edit(new_source=str(wikicode), comment=comment, latest_id=latest_id)
+        article.edit_id = data.get("latest", {}).get("id")
+        article.save()
+        return True, f"Successfully updated archived templates in '{article.title}'."
     except Exception as e:
         return False, f"Failed to commit edit: {e}"
 
@@ -318,13 +303,18 @@ def update_archived_templates_in_article(title: str, archived_url_map: dict):
 def run_article(title):
     logger.info("Archive Bot started.")
     logger.info(f"running on one page: {title}")
-    wikitext = WikipediaRestClient(title).source()
-    archived_url_map = archived_url_map_from_wikitext({}, wikitext, title)
-    success, msg = update_archived_templates_in_article(title, archived_url_map)
+    wikipedia = Wikipedia.get()
+    article = ArticleCheck.objects.create(
+        wikipedia=wikipedia,
+        title=title,
+    )
+    wikitext = WikipediaRestClient(article).source()
+    archived_url_map = archived_url_map_from_wikitext({}, wikitext, article)
+    success, msg = update_archived_templates_in_article(article, archived_url_map)
     logger.info(f"Article update result for {title}: {msg}")
 
 
-def archived_url_map_from_wikitext(initial_archived_url_map, wikitext, title):
+def archived_url_map_from_wikitext(initial_archived_url_map, wikitext, article: ArticleCheck):
     archived_url_map = initial_archived_url_map
     if not archived_url_map:
         archived_url_map = {}
@@ -340,15 +330,26 @@ def archived_url_map_from_wikitext(initial_archived_url_map, wikitext, title):
                 url_to_templates.setdefault(url, []).append(tmpl)
 
     processed_urls = set()
-    logger.debug(f"url_to_templates: {url_to_templates}")
+    for url, templates in url_to_templates.items():
+        logger.debug(f"url={url}, template count={len(templates)}")
+        for template in templates:
+            logger.debug(f"url={url}, template={template}")
+
+    title = article.title
 
     for url, templates in url_to_templates.items():
+        check: UrlCheck = UrlCheck.objects.create(
+            article=article,
+            url=url,
+        )
         if any([url.lower().startswith(prefix) for prefix in SKIPPED_URL_PREFIXES]):
             logger.info(f"Skipping DOI or archived URL: {url}")
+            check.set_ignored_permalink()
             continue
 
         if url in processed_urls:
             continue
+
         processed_urls.add(url)
 
         # Skip templates already archived in DB
@@ -359,6 +360,7 @@ def archived_url_map_from_wikitext(initial_archived_url_map, wikitext, title):
 
         if not templates_to_process:
             logger.info(f"{url} in {title} already archived.")
+            check.set_ignored_archived()
             continue
 
         # Archive the URL if not in DB
@@ -369,6 +371,7 @@ def archived_url_map_from_wikitext(initial_archived_url_map, wikitext, title):
 
         if not archive_link:
             logger.info(f"Archiving failed for {url}")
+            check.set_failed(url_is_dead)
             continue
 
         archived = False
@@ -381,6 +384,7 @@ def archived_url_map_from_wikitext(initial_archived_url_map, wikitext, title):
             )
             if updated:
                 archived = True
+                check.set_archived(archive_link,url_is_dead)
                 archived_url_map[url] = str(updated)
 
         if archived:
@@ -401,16 +405,12 @@ def run_archive_bot(interval_hours: int = 168):
 
     logger.info(f"Found {len(recent_changes)} recent changes to process.")
 
-    # Preload all archived URLs from the DB
-    archived_url_map = {
-        entry.url: entry.updated_template
-        for entry in ArchivedCitation.objects.all()
-    }
-    logger.info(f"Loaded {len(archived_url_map)} archived URLs from database.")
+    # TODO: Preload archived URLs from the DB
+    # logger.info(f"Loaded {len(archived_url_map)} archived URLs from database.")
+    archived_url_map = {}
 
+    wikipedia = Wikipedia.get()
     unique_articles = set()
-    total_urls = 0
-    archived_count = 0
     real_edits_made = 0
 
     for page in recent_changes:
@@ -423,6 +423,7 @@ def run_archive_bot(interval_hours: int = 168):
         rev = revisions[0]
         diff_html = rev.get("diff", {}).get("*", "")
         rev_content = rev.get("content")  # Full wikitext if available
+        article = ArticleCheck.objects.create(wikipedia=wikipedia, title=title)
 
         # Extract inserted wikitext, fallback to full revision content
         content_to_scan = extract_inserted_wikitext(diff_html) or rev_content
@@ -436,27 +437,12 @@ def run_archive_bot(interval_hours: int = 168):
         unique_articles.add(title)
         real_edits_made += 1
 
-        archived_url_map = archived_url_map_from_wikitext(archived_url_map, content_to_scan, title)
+        archived_url_map = archived_url_map_from_wikitext(archived_url_map, content_to_scan, article)
 
         # Push updates to Wikipedia using preloaded archived_url_map
-        success, msg = update_archived_templates_in_article(title, archived_url_map)
+        success, msg = update_archived_templates_in_article(article, archived_url_map)
         if success:
             real_edits_made += 1
         logger.info(f"Article update result for {title}: {msg}")
-
-    # Save bot stats
-    try:
-        BotRunStats.objects.update_or_create(
-            run_date=now(),
-            defaults={
-                "articles_scanned": len(unique_articles),
-                "urls_checked": total_urls,
-                "urls_archived": archived_count,
-                "edits_made": real_edits_made,
-            }
-        )
-        logger.info(f"BotRunStats saved: Articles: {len(unique_articles)}, URLs checked: {total_urls}, URLs archived: {archived_count}, Edits made: {real_edits_made}")
-    except Exception as e:
-        logger.error(f"Failed to save BotRunStats: {e}")
 
     logger.info("Archive Bot finished.")
