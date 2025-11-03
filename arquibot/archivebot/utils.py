@@ -78,7 +78,7 @@ def get_recent_changes_from_start_end_time(start_time: datetime, end_time: datet
 
     return all_pages.values()
 
-def fetch_current_wikitext_ptwiki(title: str, timeout: int=REQUEST_TIMEOUT) -> str | None:
+def fetch_current_wikitext(title: str, timeout: int=REQUEST_TIMEOUT) -> str | None:
     # Fetch full current wikitext for an article from wikipedia.org.
     params = {
         "action": "query",
@@ -141,8 +141,12 @@ def extract_citar_templates_mwparser(wikitext):
         template for template in wikicode.filter_templates()
         if template.name.strip().lower().startswith("citar ")
     ]
-    logger.debug(f"citar templates extracted ({len(result)}): {result}")
     return result
+
+def has_citar_templates_mwparser(wikitext):
+    """Checks if wikitext has citar templates with URLs"""
+    templates = extract_citar_templates_mwparser(wikitext)
+    return any(template.has("url") for template in templates )
 
 def is_url_alive(url, timeout: int=REQUEST_TIMEOUT):
     """Checks if a URL is alive (2xx or 3xx status)."""
@@ -334,6 +338,7 @@ def archived_url_map_from_wikitext(initial_archived_url_map, wikitext, article: 
         archived_url_map = {}
 
     citar_templates = extract_citar_templates_mwparser(wikitext)
+    logger.debug(f"[{article}] citar templates extracted ({len(citar_templates)}): {citar_templates}")
 
     # Map URLs to templates
     url_to_templates = {}
@@ -431,36 +436,31 @@ def run_on_recent_changes(recent_changes):
     archived_url_map = {}
 
     wikipedia = Wikipedia.get()
-    unique_articles = set()
 
     for page in recent_changes:
         title = page.get("title")
-        logger.debug(f"Analyzing '{title}'")
         revisions = page.get("revisions", [])
         if not title or not revisions:
-            logger.warning(f"Skipping {title or 'Unknown'}: missing revision content")
+            logger.debug(f"[{title}] skipping: missing revision content")
             continue
 
+        article = ArticleCheck.objects.create(wikipedia=wikipedia, title=title)
+        logger.debug(f"[{article}] analyzing")
         rev = revisions[0]
         diff_html = rev.get("diff", {}).get("*", "")
         rev_content = rev.get("content")  # Full wikitext if available
-        article = ArticleCheck.objects.create(wikipedia=wikipedia, title=title)
 
-        # Extract inserted wikitext, fallback to full revision content
-        content_to_scan = extract_inserted_wikitext(diff_html) or rev_content
-        if not content_to_scan or not content_to_scan.strip():
-            # Last resort: fetch current wikitext from wiki
-            content_to_scan = fetch_current_wikitext_ptwiki(title) or ""
-            if not content_to_scan.strip():
-                logger.info(f"Skipping {title}: no content to scan")
-                continue
+        diff_wikitext = extract_inserted_wikitext(diff_html) or rev_content
 
-        unique_articles.add(title)
+        if not has_citar_templates_mwparser(diff_wikitext):
+            logger.debug(f"[{article}] skipping: no citation templates in diff: {diff_wikitext or '(no additions)'}")
+            continue
 
-        archived_url_map = archived_url_map_from_wikitext(archived_url_map, content_to_scan, article)
+        client = WikipediaRestClient(article)
+        wikitext = client.source()
 
-        # Push updates to Wikipedia using preloaded archived_url_map
+        archived_url_map = archived_url_map_from_wikitext(archived_url_map, wikitext, article)
         success, msg = update_archived_templates_in_article(article, archived_url_map)
-        logger.info(f"Article update result for '{title}': {msg}")
+        logger.info(f"[{title}] result: {msg}")
 
     logger.info("Archive Bot finished.")

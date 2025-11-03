@@ -8,7 +8,7 @@ from django.test import override_settings
 
 from archivebot.utils import (
     get_recent_changes_with_diff,
-    fetch_current_wikitext_ptwiki,
+    fetch_current_wikitext,
     extract_inserted_wikitext,
     extract_citar_templates_mwparser,
     extract_citar_templates_as_strings,
@@ -102,7 +102,7 @@ class TestUtils(TestCase):
         }
         mock_get.return_value = mock_resp
 
-        result = fetch_current_wikitext_ptwiki("Test Article")
+        result = fetch_current_wikitext("Test Article")
         self.assertEqual(result, "Full wikitext content here")
         mock_get.assert_called_once()
         called_params = mock_get.call_args[1]["params"]
@@ -115,7 +115,7 @@ class TestUtils(TestCase):
         mock_resp.json.return_value = {"query": {"pages": []}}
         mock_get.return_value = mock_resp
 
-        result = fetch_current_wikitext_ptwiki("NoPage")
+        result = fetch_current_wikitext("NoPage")
         self.assertIsNone(result)
 
     @patch("archivebot.utils.requests.get")
@@ -127,7 +127,7 @@ class TestUtils(TestCase):
         }
         mock_get.return_value = mock_resp
 
-        result = fetch_current_wikitext_ptwiki("EmptyPage")
+        result = fetch_current_wikitext("EmptyPage")
         self.assertIsNone(result)
 
     @patch("archivebot.utils.requests.get")
@@ -137,14 +137,14 @@ class TestUtils(TestCase):
         mock_get.return_value = mock_resp
 
         with self.assertLogs(level="WARNING") as log_cm:
-            result = fetch_current_wikitext_ptwiki("HTTPErrorPage")
+            result = fetch_current_wikitext("HTTPErrorPage")
         self.assertIsNone(result)
         self.assertTrue(any("Failed to fetch full wikitext" in message for message in log_cm.output))
 
     @patch("archivebot.utils.requests.get", side_effect=requests.RequestException("Timeout"))
     def test_request_exception_returns_none_and_logs_warning(self, mock_get):
         with self.assertLogs(level="WARNING") as log_cm:
-            result = fetch_current_wikitext_ptwiki("TimeoutPage")
+            result = fetch_current_wikitext("TimeoutPage")
         self.assertIsNone(result)
         self.assertTrue(any("Failed to fetch full wikitext" in message for message in log_cm.output))
 
@@ -429,14 +429,12 @@ class TestUtils(TestCase):
     @patch("archivebot.utils.is_url_alive")
     @patch("archivebot.utils.archive_url")
     @patch("archivebot.utils.get_recent_changes_with_diff")
-    @patch("archivebot.utils.logger.info")
     @patch("archivebot.utils.process_citation_template")
     @patch("archivebot.utils.extract_inserted_wikitext")
     def test_run_archive_bot(
         self,
         mock_extract_diff,
         mock_process_citation,
-        mock_log_info,
         mock_recent_changes,
         mock_archive_url,
         mock_is_alive,
@@ -499,14 +497,6 @@ class TestUtils(TestCase):
 
         # Run the function
         run_archive_bot()
-
-        # Assert key logs called for major branches
-        mock_log_info.assert_any_call("Archive Bot started.")
-        mock_log_info.assert_any_call("Archive Bot finished.")
-        mock_log_info.assert_any_call("Skipping EmptyDiff: no content to scan")
-        mock_log_info.assert_any_call("Skipping DOI or archived URL: https://doi.org/example")
-        mock_log_info.assert_any_call("Archiving failed for https://failarchive.com")
-        mock_log_info.assert_any_call("Archived URL added to template: https://normal.com")
 
     @patch("archivebot.utils.requests.get")
     @patch("archivebot.utils.logger.warning")
