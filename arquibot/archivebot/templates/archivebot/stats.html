@@ -19,59 +19,49 @@
   </div>
   <h1>Arquibot Statistics</h1>
 
-  <label for="date-filter">Filter by date:</label>
-  <input type="date" id="date-filter" />
+  <form method="get">
+  <label for="date-filter">Filter by date (UTC):</label>
+  <input type="date" name="date" id="date-filter" value="{{ date_fmt }}" onchange="this.form.submit()">
 
   <table>
     <thead>
       <tr>
-        <th>Date</th>
-        <th>Articles Scanned</th>
-        <th>URLs Checked</th>
-        <th>URLs Archived</th>
-        <th>Edits Made</th>
+        <th>Wikipedia</th>
+        <th>Article</th>
+        <th>URL</th>
+        <th>Status</th>
+        <th>Timestamp</th>
+        <th>Edit</th>
       </tr>
     </thead>
     <tbody id="stats-body">
-      <tr><td colspan="5">Loading data...</td></tr>
+      {% for url in urls %}
+      {% with url.article.wikipedia as wikipedia %}
+      <tr>
+        <td><a href="{{ wikipedia.url}}">{{ wikipedia.code }}</a></td>
+        <td><a href="{{ url.article.url}}">{{ url.article.title }}</a></td>
+        <td><a href="{{ url.url}}">{{ url.url }}</a></td>
+        <td>
+          {% if url.archive_url %}
+          <a href="{{ url.archive_url}}">{{ url.status }}</a>
+          {% else %}
+          {{ url.status }}
+          {% endif %}
+        </td>
+        <td>{{ url.modified }}</td>
+        <td>
+          {% if url.article.edit_id and url.archive_url %}
+          <a href="{{ url.article.edit_url}}">{{ url.article.edit_id }}</a>
+          {% endif %}
+        </td>
+      </tr>
+      {% endwith %}
+      {% endfor %}
     </tbody>
   </table>
+  </form>
 
   <script>
-  async function loadStats() {
-    try {
-      const res = await fetch("/api/stats/");
-      if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
-      const data = await res.json();
-      const stats = data.summary_stats || [];
-      const tbody = document.getElementById("stats-body");
-      tbody.innerHTML = "";
-
-      if (stats.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="5">No data available.</td></tr>';
-        return;
-      }
-
-      stats.forEach(item => {
-        const runDate = item.run_date ? new Date(item.run_date).toISOString().split("T")[0] : "";
-        const tr = document.createElement("tr");
-        tr.setAttribute("data-date", runDate);
-        tr.innerHTML = `
-          <td>${new Date(item.run_date).toLocaleDateString()}</td>
-          <td>${item.articles_scanned ?? 0}</td>
-          <td>${item.urls_checked ?? 0}</td>
-          <td>${item.urls_archived ?? 0}</td>
-          <td>${item.edits_made ?? 0}</td>
-        `;
-        tbody.appendChild(tr);
-      });
-    } catch (error) {
-      console.error("Failed to load stats:", error);
-      const tbody = document.getElementById("stats-body");
-      tbody.innerHTML = '<tr><td colspan="5">Failed to load data.</td></tr>';
-    }
-  }
-
   function detectSystemTheme() {
     if (!localStorage.getItem("theme")) {
       const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
@@ -91,35 +81,6 @@
   document.addEventListener("DOMContentLoaded", () => {
     detectSystemTheme();
     applyThemePreference();
-    loadStats().then(() => {
-      const dateInput = document.getElementById("date-filter");
-      dateInput.addEventListener("change", function () {
-        const selected = this.value;
-        const rows = document.querySelectorAll("#stats-body tr");
-        let anyVisible = false;
-
-        rows.forEach(row => {
-          const rowDate = row.getAttribute("data-date");
-          if (!selected || selected === rowDate) {
-            row.style.display = "";
-            anyVisible = true;
-          } else {
-            row.style.display = "none";
-          }
-        });
-
-        // Remove previous "no data" row if any
-        const noDataRow = document.querySelector("#stats-body .no-data");
-        if (noDataRow) noDataRow.remove();
-
-        if (!anyVisible) {
-          const tr = document.createElement("tr");
-          tr.classList.add("no-data");
-          tr.innerHTML = `<td colspan="5">No data available for selected date.</td>`;
-          document.getElementById("stats-body").appendChild(tr);
-        }
-      });
-    });
   });
 
   document.getElementById("theme-toggle").addEventListener("click", () => {
