@@ -35,7 +35,7 @@ jobs:
         DEBUG: "True"
         LOG_LEVEL: "DEBUG"
         ARQUIBOT_TOKEN: "123"
-        WIKIPEDIA_URL: "https://test.wikipedia.org"
+        WIKIPEDIA_CODE: "test"
         USER_AGENT: "ArquiBot/1.0 (https://pt.wikipedia.org/wiki/Usuário(a):ArquiBot)"
       run: |
          cd arquibot
