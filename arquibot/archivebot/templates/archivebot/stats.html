@@ -43,9 +43,9 @@
         <td><a href="{{ url.url}}">{{ url.url }}</a></td>
         <td>
           {% if url.archive_url %}
-          <a href="{{ url.archive_url}}">{{ url.status }}</a>
+          <a href="{{ url.archive_url}}">{{ url.get_status_display }}</a>
           {% else %}
-          {{ url.status }}
+          {{ url.get_status_display }}
           {% endif %}
         </td>
         <td>{{ url.modified }}</td>
