@@ -1,14 +1,37 @@
 from django.contrib import admin
-from .models import BotRunStats, ArchivedCitation
+from archivebot.models import Wikipedia
+from archivebot.models import ArticleCheck
+from archivebot.models import UrlCheck
 
 
-@admin.register(BotRunStats)
-class BotRunStatsAdmin(admin.ModelAdmin):
-    list_display = ('run_date', 'articles_scanned', 'urls_checked', 'urls_archived', 'edits_made')
-    list_filter = ('run_date',)
+@admin.register(Wikipedia)
+class WikipediaAdmin(admin.ModelAdmin):
+    list_display = ("code",)
 
-@admin.register(ArchivedCitation)
-class ArchivedCitationAdmin(admin.ModelAdmin):
-    search_fields = ['article_title', 'url']
-    list_filter = ['urlmorta', 'timestamp']
-    list_display = ['article_title', 'url', 'urlmorta', 'arquivourl', 'timestamp']
+
+@admin.register(ArticleCheck)
+class ArticleCheckAdmin(admin.ModelAdmin):
+    search_fields = ["title"]
+    list_filter = ["wikipedia", "modified"]
+    list_display = [
+        "wikipedia",
+        "title",
+        "edit_id",
+        "modified",
+    ]
+    list_select_related = ["wikipedia"]
+
+
+@admin.register(UrlCheck)
+class UrlCheckAdmin(admin.ModelAdmin):
+    search_fields = ["article__title", "url"]
+    list_filter = ["status", "is_url_dead", "modified"]
+    list_display = [
+        "article",
+        "url",
+        "status",
+        "archive_url",
+        "is_url_dead",
+        "modified",
+    ]
+    list_select_related = ["article__wikipedia"]
