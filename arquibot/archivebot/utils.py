@@ -1,10 +1,15 @@
-import requests
 import logging
-import mwparserfromhell
-from bs4 import BeautifulSoup
-from django.utils.timezone import now
+from datetime import time
+from datetime import datetime
+from datetime import date
 from datetime import timedelta
+
+import requests
+import mwparserfromhell
+from django.utils.timezone import now
+from django.utils.timezone import make_aware
 from django.conf import settings
+from bs4 import BeautifulSoup
 
 from archivebot.archiving import ArchivedURL
 from archivebot.wikipedia import WikipediaRestClient
@@ -31,7 +36,16 @@ def get_recent_changes_with_diff(last_hours=LAST_HOURS):
     """Fetch recent changes with diffs using generator=recentchanges, rvdiffto=prev and grccontinue."""
     end_time = now().astimezone()
     start_time = end_time - timedelta(hours=last_hours)
+    return get_recent_changes_from_start_end_time(start_time, end_time)
 
+
+def get_recent_changes_from_dates(start_date: date, end_date: date):
+    start_time = make_aware(datetime.combine(start_date, time.min))
+    end_time = make_aware(datetime.combine(end_date, time.max))
+    return get_recent_changes_from_start_end_time(start_time, end_time)
+
+
+def get_recent_changes_from_start_end_time(start_time: datetime, end_time: datetime):
     params = {
         "action": "query",
         "format": "json",
@@ -311,7 +325,7 @@ def run_article(title):
     wikitext = WikipediaRestClient(article).source()
     archived_url_map = archived_url_map_from_wikitext({}, wikitext, article)
     success, msg = update_archived_templates_in_article(article, archived_url_map)
-    logger.info(f"Article update result for {title}: {msg}")
+    logger.info(f"Article update result for '{title}': {msg}")
 
 
 def archived_url_map_from_wikitext(initial_archived_url_map, wikitext, article: ArticleCheck):
@@ -394,10 +408,17 @@ def archived_url_map_from_wikitext(initial_archived_url_map, wikitext, article: 
 
 
 def run_archive_bot(interval_hours: int = 168):
-    logger.info("Archive Bot started.")
-
-    # Fetch recent changes
     recent_changes = get_recent_changes_with_diff(last_hours=interval_hours) # recent_changes = get_recent_changes_with_diff(grclimit=50, last_hours=interval_hours)
+    run_on_recent_changes(recent_changes)
+
+
+def run_rc_date(date):
+    recent_changes = get_recent_changes_from_dates(date, date)
+    run_on_recent_changes(recent_changes)
+
+
+def run_on_recent_changes(recent_changes):
+    logger.info("Archive Bot started.")
 
     if not recent_changes:
         logger.info("No recent changes found.")
@@ -411,10 +432,10 @@ def run_archive_bot(interval_hours: int = 168):
 
     wikipedia = Wikipedia.get()
     unique_articles = set()
-    real_edits_made = 0
 
     for page in recent_changes:
         title = page.get("title")
+        logger.debug(f"Analyzing '{title}'")
         revisions = page.get("revisions", [])
         if not title or not revisions:
             logger.warning(f"Skipping {title or 'Unknown'}: missing revision content")
@@ -435,14 +456,11 @@ def run_archive_bot(interval_hours: int = 168):
                 continue
 
         unique_articles.add(title)
-        real_edits_made += 1
 
         archived_url_map = archived_url_map_from_wikitext(archived_url_map, content_to_scan, article)
 
         # Push updates to Wikipedia using preloaded archived_url_map
         success, msg = update_archived_templates_in_article(article, archived_url_map)
-        if success:
-            real_edits_made += 1
-        logger.info(f"Article update result for {title}: {msg}")
+        logger.info(f"Article update result for '{title}': {msg}")
 
     logger.info("Archive Bot finished.")
