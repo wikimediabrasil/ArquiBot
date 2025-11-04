@@ -7,7 +7,6 @@ from django.test import TestCase
 from django.test import override_settings
 
 from archivebot.utils import (
-    get_recent_changes_with_diff,
     fetch_current_wikitext,
     extract_inserted_wikitext,
     extract_citar_templates_mwparser,
@@ -20,13 +19,11 @@ from archivebot.utils import (
     process_citation_template,
     admin_panel_check_func,
     update_archived_templates_in_article,
-    run_archive_bot
 )
 
 from archivebot.archiving import ArchivedURL
 from archivebot.models import Wikipedia
 from archivebot.models import ArticleCheck
-from archivebot.wikipedia import WikipediaRestClient
 
 @override_settings(
     ARQUIBOT_TOKEN="token123",
@@ -37,7 +34,6 @@ class TestUtils(TestCase):
     def setUp(self):
         self.wikipedia = Wikipedia.get()
         self.article = self.get_article("Test Page")
-        self.rest_client = WikipediaRestClient(self.article)
 
     def get_article(self, title):
         wikipedia = Wikipedia.get()
@@ -46,14 +42,14 @@ class TestUtils(TestCase):
 
     def mock_rest_get(self, mocker, data):
         mocker.get(
-            self.rest_client.endpoint(),
+            self.article._page_endpoint(),
             json=data,
             status_code=200,
         )
 
     def mock_rest_put(self, mocker, data):
         mocker.put(
-            self.rest_client.endpoint(),
+            self.article._page_endpoint(),
             json=data,
             status_code=200,
         )
@@ -70,7 +66,7 @@ class TestUtils(TestCase):
 
     def mock_edit_fail(self, mocker):
         mocker.put(
-            self.rest_client.endpoint(),
+            self.article._page_endpoint(),
             json={"message": "edit failed"},
             status_code=400,
         )

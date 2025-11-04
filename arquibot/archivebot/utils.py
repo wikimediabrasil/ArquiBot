@@ -13,13 +13,11 @@ from django.conf import settings
 from bs4 import BeautifulSoup
 
 from archivebot.archiving import ArchivedURL
-from archivebot.wikipedia import WikipediaRestClient
-from archivebot.wikipedia import WikipediaDiffRestClient
 from archivebot.models import Wikipedia
 from archivebot.models import ArticleCheck
 from archivebot.models import UrlCheck
-from archivebot.recent_changes import RecentChanges
-from archivebot.recent_changes import Diff
+from archivebot.models import RecentChanges
+from archivebot.models import Diff
 
 SKIPPED_URL_PREFIXES = settings.SKIPPED_URL_PREFIXES
 LAST_HOURS = settings.LAST_HOURS
@@ -240,8 +238,7 @@ def update_archived_templates_in_article(article: ArticleCheck, archived_url_map
     if not hasattr(archived_url_map, "values") or not archived_url_map.values():
         return False, "no templates to update"
 
-    client = WikipediaRestClient(article)
-    page_data = client.page_data()
+    page_data = article.page_data()
     wikitext = page_data.get("source", "")
     latest_id = page_data.get("latest", {}).get("id")
     if not wikitext or not latest_id:
@@ -286,10 +283,8 @@ def update_archived_templates_in_article(article: ArticleCheck, archived_url_map
     comment = f"Arquivamento de {count} {word}"
 
     try:
-        data = client.edit(new_source=str(wikicode), comment=comment, latest_id=latest_id)
-        article.edit_id = data.get("latest", {}).get("id")
-        article.save()
-        return True, f"Successfully updated archived templates in '{article.title}'."
+        article.edit_and_save(new_source=str(wikicode), comment=comment, latest_id=latest_id)
+        return True, f"{article} Successfully updated archived templates in."
     except Exception as e:
         return False, f"Failed to commit edit: {e}"
 
@@ -298,11 +293,11 @@ def run_article(title):
     logger.info("Archive Bot started.")
     logger.info(f"running on one page: {title}")
     wikipedia = Wikipedia.get()
-    article = ArticleCheck.objects.create(
+    article: ArticleCheck = ArticleCheck.objects.create(
         wikipedia=wikipedia,
         title=title,
     )
-    wikitext = WikipediaRestClient(article).source()
+    wikitext = article.source()
     archived_url_map = archived_url_map_from_wikitext({}, wikitext, article)
     success, msg = update_archived_templates_in_article(article, archived_url_map)
     logger.info(f"Article update result for '{title}': {msg}")
@@ -314,7 +309,7 @@ def archived_url_map_from_wikitext(initial_archived_url_map, wikitext, article: 
         archived_url_map = {}
 
     citar_templates = extract_citar_templates_mwparser(wikitext)
-    logger.debug(f"[{article}] citar templates extracted ({len(citar_templates)}): {citar_templates}")
+    logger.debug(f"{article} citar templates extracted ({len(citar_templates)}): {citar_templates}")
 
     # Map URLs to templates
     url_to_templates = {}
@@ -408,25 +403,21 @@ def run_on_recent_changes(diffs: List[Diff]):
     logger.info(f"Found {len(diffs)} diffs to process.")
 
     archived_url_map = {}
-    wikipedia = Wikipedia.get()
+    articles = ArticleCheck.create_from_recent_changes_diffs(diffs)
 
-    for diff in diffs:
-        title = diff.title
-        article = ArticleCheck.objects.create(wikipedia=wikipedia, title=title)
-        client = WikipediaDiffRestClient(diff)
-        inserted_wikitext = client.diff_inserted_wikitext()
+    for article in articles:
+        inserted_wikitext = article.diff_inserted_wikitext()
 
         if not has_citar_templates_mwparser(inserted_wikitext):
             inserted_wikitext = inserted_wikitext.replace("\n", "\\n")
-            logger.debug(f"[{article}] skipping: no citation templates in diff: {inserted_wikitext or '(no additions)'}")
+            logger.debug(f"{article} skipping: no citation templates in diff")
             continue
 
-        logger.info(f"[{article}] has citar templates in diff")
-        client = WikipediaRestClient(article)
-        wikitext = client.source()
+        logger.info(f"{article} has citar templates in diff")
+        wikitext = article.source()
 
         archived_url_map = archived_url_map_from_wikitext(archived_url_map, wikitext, article)
         success, msg = update_archived_templates_in_article(article, archived_url_map)
-        logger.info(f"[{title}] result: {msg}")
+        logger.info(f"{article} result: {msg}")
 
     logger.info("Archive Bot finished.")
