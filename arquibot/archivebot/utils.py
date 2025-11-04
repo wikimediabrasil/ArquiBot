@@ -1,4 +1,5 @@
 import logging
+from typing import List
 from datetime import time
 from datetime import datetime
 from datetime import date
@@ -13,9 +14,12 @@ from bs4 import BeautifulSoup
 
 from archivebot.archiving import ArchivedURL
 from archivebot.wikipedia import WikipediaRestClient
+from archivebot.wikipedia import WikipediaDiffRestClient
 from archivebot.models import Wikipedia
 from archivebot.models import ArticleCheck
 from archivebot.models import UrlCheck
+from archivebot.recent_changes import RecentChanges
+from archivebot.recent_changes import Diff
 
 SKIPPED_URL_PREFIXES = settings.SKIPPED_URL_PREFIXES
 LAST_HOURS = settings.LAST_HOURS
@@ -45,38 +49,10 @@ def get_recent_changes_from_dates(start_date: date, end_date: date):
     return get_recent_changes_from_start_end_time(start_time, end_time)
 
 
-def get_recent_changes_from_start_end_time(start_time: datetime, end_time: datetime):
-    params = {
-        "action": "query",
-        "format": "json",
-        "generator": "recentchanges",
-        "grcnamespace": 0,
-        "grclimit": "max",
-        "grcshow": "!bot",
-        "grcstart": end_time.isoformat(),
-        "grcend": start_time.isoformat(),
-        "prop": "revisions",
-        "rvprop": "ids|timestamp|user|comment|content",
-        "rvdiffto": "prev",
-    }
-
-    all_pages = {}
-    wikipedia = Wikipedia.get()
-
-    while True:
-        response = requests.get(wikipedia.action_api(), params=params, headers=HEADERS)
-        data = response.json()
-
-        pages = data.get("query", {}).get("pages", {})
-        all_pages.update(pages)  # merge new batch into results
-
-        # Handle continuation
-        if "continue" in data:
-            params.update(data["continue"])  # adds "grccontinue"
-        else:
-            break
-
-    return all_pages.values()
+def get_recent_changes_from_start_end_time(start_time: datetime, end_time: datetime) -> List[Diff]:
+    rc = RecentChanges(start_time, end_time, wikipedia=Wikipedia.get())
+    rc.load()
+    return rc.combined_diffs()
 
 def fetch_current_wikitext(title: str, timeout: int=REQUEST_TIMEOUT) -> str | None:
     # Fetch full current wikitext for an article from wikipedia.org.
@@ -262,7 +238,7 @@ def update_archived_templates_in_article(article: ArticleCheck, archived_url_map
         tuple: (success: bool, message: str)
     """
     if not hasattr(archived_url_map, "values") or not archived_url_map.values():
-        return False, "No templates to update"
+        return False, "no templates to update"
 
     client = WikipediaRestClient(article)
     page_data = client.page_data()
@@ -270,7 +246,7 @@ def update_archived_templates_in_article(article: ArticleCheck, archived_url_map
     latest_id = page_data.get("latest", {}).get("id")
     if not wikitext or not latest_id:
         logger.error(f"page_data={page_data}")
-        return False, "Failed to get wikitext or revision ID."
+        return False, "failed to get wikitext or revision ID."
 
     # Step 2: Parse wikitext with mwparserfromhell
     wikicode = mwparserfromhell.parse(wikitext)
@@ -378,7 +354,7 @@ def archived_url_map_from_wikitext(initial_archived_url_map, wikitext, article: 
         ]
 
         if not templates_to_process:
-            logger.info(f"{url} in {title} already archived.")
+            logger.debug(f"url={url} in [{title}] already archived.")
             check.set_ignored_archived()
             continue
 
@@ -422,40 +398,30 @@ def run_rc_date(date):
     run_on_recent_changes(recent_changes)
 
 
-def run_on_recent_changes(recent_changes):
+def run_on_recent_changes(diffs: List[Diff]):
     logger.info("Archive Bot started.")
 
-    if not recent_changes:
+    if not diffs:
         logger.info("No recent changes found.")
         return
 
-    logger.info(f"Found {len(recent_changes)} recent changes to process.")
+    logger.info(f"Found {len(diffs)} diffs to process.")
 
-    # TODO: Preload archived URLs from the DB
-    # logger.info(f"Loaded {len(archived_url_map)} archived URLs from database.")
     archived_url_map = {}
-
     wikipedia = Wikipedia.get()
 
-    for page in recent_changes:
-        title = page.get("title")
-        revisions = page.get("revisions", [])
-        if not title or not revisions:
-            logger.debug(f"[{title}] skipping: missing revision content")
-            continue
-
+    for diff in diffs:
+        title = diff.title
         article = ArticleCheck.objects.create(wikipedia=wikipedia, title=title)
-        logger.debug(f"[{article}] analyzing")
-        rev = revisions[0]
-        diff_html = rev.get("diff", {}).get("*", "")
-        rev_content = rev.get("content")  # Full wikitext if available
+        client = WikipediaDiffRestClient(diff)
+        inserted_wikitext = client.diff_inserted_wikitext()
 
-        diff_wikitext = extract_inserted_wikitext(diff_html) or rev_content
-
-        if not has_citar_templates_mwparser(diff_wikitext):
-            logger.debug(f"[{article}] skipping: no citation templates in diff: {diff_wikitext or '(no additions)'}")
+        if not has_citar_templates_mwparser(inserted_wikitext):
+            inserted_wikitext = inserted_wikitext.replace("\n", "\\n")
+            logger.debug(f"[{article}] skipping: no citation templates in diff: {inserted_wikitext or '(no additions)'}")
             continue
 
+        logger.info(f"[{article}] has citar templates in diff")
         client = WikipediaRestClient(article)
         wikitext = client.source()
 

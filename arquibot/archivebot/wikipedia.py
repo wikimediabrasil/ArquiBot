@@ -5,8 +5,10 @@ from urllib.parse import quote
 from django.conf import settings
 
 from archivebot.models import ArticleCheck
+from archivebot.recent_changes import Diff
 
 logger = logging.getLogger("arquibot")
+
 
 class WikipediaClient:
     HEADERS = {
@@ -14,6 +16,43 @@ class WikipediaClient:
         "User-Agent": settings.USER_AGENT,
         "Content-Type": "application/json",
     }
+
+
+class WikipediaDiffRestClient(WikipediaClient):
+    def __init__(self, diff: Diff):
+        self.diff = diff
+
+    def endpoint(self):
+        base = self.diff.wikipedia.rest_api()
+        return (
+            base
+            + "/revision/"
+            + str(self.diff.old_revision_id)
+            + "/compare/"
+            + str(self.diff.new_revision_id)
+        )
+
+    def diff_changes(self):
+        logger.debug(
+            f"[{self.diff.title}] {self.diff.old_revision_id} ->"
+            f" {self.diff.new_revision_id} obtaining diff change..."
+        )
+        response = requests.get(
+            self.endpoint(),
+            headers=self.HEADERS,
+        )
+        response.raise_for_status()
+        return response.json()
+
+    def diff_inserted_wikitext(self):
+        changes = self.diff_changes()["diff"]
+        inserted = []
+        for change in changes:
+            allowed_types = [1, 3, 5]
+            if change.get("type") in allowed_types:
+                if change.get("text"):
+                    inserted.append(change["text"])
+        return "\n".join(inserted)
 
 
 class WikipediaRestClient(WikipediaClient):
