@@ -50,6 +50,9 @@ ALLOWED_HOSTS = [
     "arquibot.toolforge.org"
 ]
 
+if DEBUG:
+    ALLOWED_HOSTS.append("localhost")
+
 
 # Application definition
 
