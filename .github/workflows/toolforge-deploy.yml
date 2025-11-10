@@ -1,0 +1,40 @@
+name: Toolforge Deploy
+on:
+  workflow_dispatch: ~
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    name: Deploy to Toolforge
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure SSH key
+        uses: shimataro/ssh-key-action@v2
+        with:
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          known_hosts: ${{ secrets.SSH_KNOWN_HOSTS }}
+
+      - name: Run deployment commands
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          request_pty: true
+          script: |
+            set -xe
+            become arquibot git -C ./www/python fetch origin
+            become arquibot git -C ./www/python reset --hard origin/main
+            become arquibot git -C ./www/python pull origin main
+            become arquibot webservice python3.11 shell -- webservice-python-bootstrap
+            become arquibot webservice python3.11 shell -- ./www/python/venv/bin/python ./www/python/src/manage.py migrate
+            become arquibot webservice python3.11 shell -- ./www/python/venv/bin/python ./www/python/src/manage.py collectstatic --noinput
+            become arquibot webservice python3.11 restart
+            become arquibot webservice python3.11 status
+
