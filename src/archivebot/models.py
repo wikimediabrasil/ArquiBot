@@ -63,7 +63,7 @@ class ArticleCheck(models.Model):
     def __str__(self):
         suffix = ""
         if self.diff_new_id and self.diff_old_id:
-            suffix = f" | {self.diff_new_id} -> {self.diff_old_id}"
+            suffix = f" | {self.diff_old_id} -> {self.diff_new_id}"
         return f"[{self.title}{suffix}]"
 
     def url(self):
