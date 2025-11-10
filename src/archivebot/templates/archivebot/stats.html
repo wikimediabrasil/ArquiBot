@@ -40,7 +40,7 @@
       <tr>
         <td><a href="{{ wikipedia.url}}">{{ wikipedia.code }}</a></td>
         <td><a href="{{ url.article.url}}">{{ url.article.title }}</a></td>
-        <td><a href="{{ url.url}}">{{ url.url }}</a></td>
+        <td style="word-wrap: break-word; max-width: 500px"><a href="{{ url.url}}">{{ url.url }}</a></td>
         <td>
           {% if url.archive_url %}
           <a href="{{ url.archive_url}}">{{ url.get_status_display }}</a>
