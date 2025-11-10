@@ -19,6 +19,7 @@ Setup a python virtual environment using `requirements.txt`.
 * `python3 manage.py runserver` to see the web page with statistics
 * `python3 manage.py run_archive_bot` to run for recent changes withing the last 24 hours
 * `python3 manage.py run_article TITLE` to run for a specific article
+* `python3 manage.py run_rc_date YYYY-MM-DD` to run on recent changes at a speficic date (UTC)
 
 ## FEATURES
 
