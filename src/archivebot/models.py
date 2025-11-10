@@ -154,6 +154,7 @@ class ArticleCheck(models.Model):
             headers=self.wikipedia.headers(),
             data=json.dumps(payload),
         )
+        logger.debug(f"{self} response.text={response.text}")
         response.raise_for_status()
         return response.json()
 
