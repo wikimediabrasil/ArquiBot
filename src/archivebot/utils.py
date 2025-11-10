@@ -403,7 +403,7 @@ def run_on_recent_changes(diffs: List[Diff]):
     logger.info(f"Found {len(diffs)} diffs to process.")
 
     archived_url_map = {}
-    articles = ArticleCheck.create_from_recent_changes_diffs(diffs)
+    articles = ArticleCheck.from_recent_changes_diffs(diffs)
 
     for article in articles:
         inserted_wikitext = article.diff_inserted_wikitext()
@@ -413,7 +413,8 @@ def run_on_recent_changes(diffs: List[Diff]):
             logger.debug(f"{article} skipping: no citation templates in diff")
             continue
 
-        logger.info(f"{article} has citar templates in diff")
+        logger.info(f"{article} has citar templates in diff, saving ArticleCheck in database...")
+        article.save()
         wikitext = article.source()
 
         archived_url_map = archived_url_map_from_wikitext(archived_url_map, wikitext, article)

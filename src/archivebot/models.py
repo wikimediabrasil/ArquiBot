@@ -78,10 +78,10 @@ class ArticleCheck(models.Model):
     # ------------
 
     @staticmethod
-    def create_from_recent_changes_diffs(diffs: List["Diff"]) -> List["ArticleCheck"]:
+    def from_recent_changes_diffs(diffs: List["Diff"]) -> List["ArticleCheck"]:
         articles = []
         for diff in diffs:
-            article = ArticleCheck.objects.create(
+            article = ArticleCheck(
                 wikipedia=diff.wikipedia,
                 title=diff.title,
                 diff_new_id=diff.new_revision_id,
