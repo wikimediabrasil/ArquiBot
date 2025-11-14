@@ -280,7 +280,7 @@ def update_archived_templates_in_article(article: ArticleCheck, archived_url_map
     # Step 4: Commit updated wikitext back to Wikipedia
     count = len(urls_archived)
     word = "URLs" if count > 1 else "URL"
-    comment = f"Arquivamento de {count} {word}"
+    comment = f"[[Wikipédia:Robôs|robô]]: Arquivamento de {count} {word}"
 
     try:
         article.edit_and_save(new_source=str(wikicode), comment=comment, latest_id=latest_id)
