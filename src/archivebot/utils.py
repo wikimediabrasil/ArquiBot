@@ -417,7 +417,7 @@ def run_on_recent_changes(diffs: List[Diff]):
         article.save()
         wikitext = article.source()
 
-        archived_url_map = archived_url_map_from_wikitext(archived_url_map, wikitext, article)
+        archived_url_map = archived_url_map_from_wikitext({}, wikitext, article)
         success, msg = update_archived_templates_in_article(article, archived_url_map)
         logger.info(f"{article} result: {msg}")
 
