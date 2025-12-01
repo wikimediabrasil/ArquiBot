@@ -133,11 +133,6 @@ def is_url_alive(url, timeout: int=REQUEST_TIMEOUT):
         logger.warning(f"URL check failed for {url}: {str(e)}")
         return False
 
-def archive_url(url):
-    arq = ArchivedURL(url)
-    arq.archive()
-    return arq.archive_url
-
 def extract_citar_templates_as_strings(text):
     """
     Extract all full {{citar ...}} templates (as strings) from wikitext.
@@ -209,19 +204,6 @@ def extract_external_links_from_text(text):
 
     return list(urls)
 
-def admin_panel_check_func(url: str, archived_url_map: dict) -> str | None:
-    """
-    Check if the given URL has an archived template in the local admin panel data.
-
-    Args:
-        url (str): The original URL to check.
-        archived_url_map (dict): A dictionary mapping original URLs to archived template strings.
-
-    Returns:
-        str or None: The archived template string if found, else None.
-    """
-    return archived_url_map.get(url)
-
 def update_archived_templates_in_article(article: ArticleCheck, archived_url_map: dict):
     """
     Fetch the Wikipedia page, replace citation templates with archived versions where available,
@@ -229,7 +211,7 @@ def update_archived_templates_in_article(article: ArticleCheck, archived_url_map
 
     Args:
         title (str): Wikipedia page title to edit (e.g. "User:YourBot/sandbox").
-        archived_url_map (dict): Map original URLs to archived template strings.
+        archived_url_map (dict): Map original URLs to archived URLs.
         edit_comment (str): Edit summary/comment.
 
     Returns:
@@ -262,11 +244,16 @@ def update_archived_templates_in_article(article: ArticleCheck, archived_url_map
 
         url = str(template.get("url").value).strip()
 
-        archived_template_str = admin_panel_check_func(url, archived_url_map)
-        if archived_template_str:
-            # Replace the whole template with the archived one
+        archived_url = archived_url_map.get(url)
+        if archived_url:
+            new_template_str = process_citation_template(
+                 title=article.title,
+                 template=template,
+                 archive_url=archived_url,
+                 url_is_dead=not is_url_alive(url),
+            )
             try:
-                new_template = mwparserfromhell.parse(archived_template_str).filter_templates()[0]
+                new_template = mwparserfromhell.parse(new_template_str).filter_templates()[0]
                 wikicode.replace(template, new_template)
                 changed = True
                 urls_archived.add(url)
@@ -353,32 +340,22 @@ def archived_url_map_from_wikitext(initial_archived_url_map, wikitext, article: 
             check.set_ignored_archived()
             continue
 
-        # Archive the URL if not in DB
-        archive_link = archived_url_map.get(url)
-        if not archive_link:
-            archive_link = archive_url(url)
+        archive_url = archived_url_map.get(url)
+        if not archive_url:
+            # Archive the URL if not in DB
+            arq = ArchivedURL(url)
+            arq.archive()
+            archive_url = arq.archive_url
         url_is_dead = not is_url_alive(url)
 
-        if not archive_link:
+        if not archive_url:
             logger.info(f"Archiving failed for {url}")
             check.set_failed(url_is_dead)
             continue
 
-        archived = False
-        for tmpl in templates_to_process:
-            updated = process_citation_template(
-                title=title,
-                template=tmpl,
-                archive_url=archive_link,
-                url_is_dead=url_is_dead
-            )
-            if updated:
-                archived = True
-                check.set_archived(archive_link,url_is_dead)
-                archived_url_map[url] = str(updated)
-
-        if archived:
-            logger.info(f"Archived URL added to template: {url}")
+        check.set_archived(archive_url, url_is_dead)
+        archived_url_map[url] = archive_url
+        logger.info(f"Archived URL added to template: {url}")
 
     return archived_url_map
 
