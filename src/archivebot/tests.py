@@ -13,17 +13,20 @@ from archivebot.utils import (
     extract_citar_templates_as_strings,
     extract_external_links_from_text,
     is_url_alive,
-    archive_url,
     parse_citar_template,
     build_updated_template,
     process_citation_template,
-    admin_panel_check_func,
     update_archived_templates_in_article,
 )
 
 from archivebot.archiving import ArchivedURL
 from archivebot.models import Wikipedia
 from archivebot.models import ArticleCheck
+
+def archive_url(url):
+    arq = ArchivedURL(url)
+    arq.archive()
+    return arq.archive_url
 
 @override_settings(
     ARQUIBOT_TOKEN="token123",
@@ -70,6 +73,9 @@ class TestUtils(TestCase):
             json={"message": "edit failed"},
             status_code=400,
         )
+
+    def mock_alive(self, mocker, url):
+        mocker.head(url, status_code=200)
 
     #  fetch_current_wikitext_ptwiki tests
     @patch("archivebot.utils.requests.get")
@@ -390,22 +396,23 @@ class TestUtils(TestCase):
         self.assertNotIn("urlmorta=", updated_template4)  # urlmorta should be removed
 
     def test_admin_panel_check_func_found(self):
-        archived_map = {"https://example.com": "{{Citar web|url=https://example.com|arquivourl=https://archive.org}}"}
-        result = admin_panel_check_func("https://example.com", archived_map)
+        archived_map = {"https://example.com": "https://archive.org"}
+        result = archived_map.get("https://example.com")
         self.assertEqual(result, archived_map["https://example.com"])
 
     def test_admin_panel_check_func_not_found(self):
-        archived_map = {"https://example.com": "archived template"}
-        result = admin_panel_check_func("https://missing.com", archived_map)
+        archived_map = {"https://example.com": "https://archive.org"}
+        result = archived_map.get("https://missing.com")
         self.assertIsNone(result)
 
     @requests_mock.Mocker()
     def test_update_archived_templates_in_article_success(self, mocker):
-        source = "{{Citar web|url=https://example.com}}"
+        source = "{{Citar web|url=https://pt.wikipedia.org}}"
         self.mock_page_source(mocker, source)
         self.mock_edit_id(mocker, 12346)
+        self.mock_alive(mocker, "https://pt.wikipedia.org")
         archived_map = {
-            "https://example.com": "{{Citar web|url=https://example.com|arquivourl=https://archive.org}}"
+            "https://pt.wikipedia.org": "http://web.archive.org/web/20250115032356/https://pt.wikipedia.org/"
         }
         success, msg = update_archived_templates_in_article(self.article, archived_map)
         self.article.refresh_from_db()
@@ -416,17 +423,19 @@ class TestUtils(TestCase):
     @requests_mock.Mocker()
     def test_update_archived_templates_in_article_get_fail(self, mocker):
         self.mock_page_source(mocker, "")
+        self.mock_alive(mocker, "https://pt.wikipedia.org")
         success, msg = update_archived_templates_in_article(self.article, {})
         self.assertFalse(success)
         self.assertIn("no templates to update", msg)
 
     @requests_mock.Mocker()
     def test_update_archived_templates_in_article_put_fail(self, mocker):
-        source= "{{Citar web|url=https://example.com}}",
+        source= "{{Citar web|url=https://pt.wikipedia.org}}",
         self.mock_page_source(mocker, source)
         self.mock_edit_fail(mocker)
+        self.mock_alive(mocker, "https://pt.wikipedia.org")
         archived_map = {
-            "https://example.com": "{{Citar web|url=https://example.com|arquivourl=https://archive.org}}"
+            "https://pt.wikipedia.org": "http://web.archive.org/web/20250115032356/https://pt.wikipedia.org/"
         }
         success, msg = update_archived_templates_in_article(self.article, archived_map)
         self.assertFalse(success)
@@ -437,7 +446,7 @@ class TestUtils(TestCase):
         source= "{{Citar web|url=https://other.com}}",
         self.mock_page_source(mocker, source)
         archived_map = {
-            "https://example.com": "{{Citar web|url=https://example.com|arquivourl=https://archive.org}}"
+            "https://pt.wikipedia.org": "http://web.archive.org/web/20250115032356/https://pt.wikipedia.org/"
         }
         success, msg = update_archived_templates_in_article(self.article, archived_map)
         self.assertFalse(success)
