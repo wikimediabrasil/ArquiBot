@@ -12,7 +12,6 @@ from archivebot.utils import (
     extract_citar_templates_mwparser,
     extract_citar_templates_as_strings,
     extract_external_links_from_text,
-    is_url_alive,
     parse_citar_template,
     build_updated_template,
     process_citation_template,
@@ -73,9 +72,6 @@ class TestUtils(TestCase):
             json={"message": "edit failed"},
             status_code=400,
         )
-
-    def mock_alive(self, mocker, url):
-        mocker.head(url, status_code=200)
 
     #  fetch_current_wikitext_ptwiki tests
     @patch("archivebot.utils.requests.get")
@@ -237,17 +233,6 @@ class TestUtils(TestCase):
         self.assertIn("https://example.org", result)
         self.assertIn("https://site.com/page", result)
 
-    # is_url_alive and archive_url tests
-    @patch("archivebot.utils.requests.head")
-    def test_is_url_alive_success(self, mock_head):
-        mock_head.return_value.status_code = 200
-        self.assertTrue(is_url_alive("https://example.org"))
-
-    @patch("archivebot.utils.requests.head")
-    def test_is_url_alive_fail(self, mock_head):
-        mock_head.side_effect = requests.RequestException()
-        self.assertFalse(is_url_alive("https://example.org"))
-
     # archive_url tests
     @patch("archivebot.utils.requests.get")
     @patch("archivebot.archiving.WaybackMachineSaveAPI.save")
@@ -347,11 +332,9 @@ class TestUtils(TestCase):
             title=page_title,
             template=tpl,
             archive_url='http://web.archive.org/web/20250115032356/https://pt.wikipedia.org/',
-            url_is_dead=True
         )
 
         self.assertIn("wayb=20250115032356", updated_template)
-        self.assertIn("urlmorta=sim", updated_template)
 
         # --- New test case: skips if arquivourl or wayb already present ---
         template_str2 = '{{Citar web|url=https://pt.wikipedia.org/|arquivourl=http://web.archive.org/web/20250115032356/https://pt.wikipedia.org/}}'
@@ -362,7 +345,6 @@ class TestUtils(TestCase):
             title=page_title,
             template=tpl2,
             archive_url='http://web.archive.org/web/20250115032356/https://pt.wikipedia.org/',
-            url_is_dead=False
         )
 
         self.assertIsNone(result2)
@@ -376,24 +358,9 @@ class TestUtils(TestCase):
                 title=page_title,
                 template=tpl3,
                 archive_url='http://web.archive.org/web/20250115032356/https://pt.wikipedia.org/',
-                url_is_dead=False
             )
 
             self.assertIsNone(result3)
-
-        # --- New test: url_is_dead is False AND urlmorta exists, so it should be removed ---
-        template_str4 = '{{Citar web|url=https://example.org|urlmorta=sim}}'
-        wikicode4 = mwparserfromhell.parse(template_str4)
-        tpl4 = wikicode4.filter_templates()[0]
-
-        updated_template4 = process_citation_template(
-            title=page_title,
-            template=tpl4,
-            archive_url='http://web.archive.org/web/20250115032356/https://pt.wikipedia.org/',
-            url_is_dead=False
-        )
-
-        self.assertNotIn("urlmorta=", updated_template4)  # urlmorta should be removed
 
     def test_admin_panel_check_func_found(self):
         archived_map = {"https://example.com": "https://archive.org"}
@@ -410,7 +377,6 @@ class TestUtils(TestCase):
         source = "{{Citar web|url=https://pt.wikipedia.org}}"
         self.mock_page_source(mocker, source)
         self.mock_edit_id(mocker, 12346)
-        self.mock_alive(mocker, "https://pt.wikipedia.org")
         archived_map = {
             "https://pt.wikipedia.org": "http://web.archive.org/web/20250115032356/https://pt.wikipedia.org/"
         }
@@ -423,7 +389,6 @@ class TestUtils(TestCase):
     @requests_mock.Mocker()
     def test_update_archived_templates_in_article_get_fail(self, mocker):
         self.mock_page_source(mocker, "")
-        self.mock_alive(mocker, "https://pt.wikipedia.org")
         success, msg = update_archived_templates_in_article(self.article, {})
         self.assertFalse(success)
         self.assertIn("no templates to update", msg)
@@ -433,7 +398,6 @@ class TestUtils(TestCase):
         source= "{{Citar web|url=https://pt.wikipedia.org}}",
         self.mock_page_source(mocker, source)
         self.mock_edit_fail(mocker)
-        self.mock_alive(mocker, "https://pt.wikipedia.org")
         archived_map = {
             "https://pt.wikipedia.org": "http://web.archive.org/web/20250115032356/https://pt.wikipedia.org/"
         }

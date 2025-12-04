@@ -122,17 +122,6 @@ def has_citar_templates_mwparser(wikitext):
     templates = extract_citar_templates_mwparser(wikitext)
     return any(template.has("url") for template in templates )
 
-def is_url_alive(url, timeout: int=REQUEST_TIMEOUT):
-    """Checks if a URL is alive (2xx or 3xx status)."""
-    try:
-        response = requests.head(url, allow_redirects=True, timeout=timeout)
-        logger.info(f"Checked URL {url}, status code: {response.status_code}")
-        # we are ignoring 401, 402 and 403
-        return response.status_code < 404
-    except requests.RequestException as e:
-        logger.warning(f"URL check failed for {url}: {str(e)}")
-        return False
-
 def extract_citar_templates_as_strings(text):
     """
     Extract all full {{citar ...}} templates (as strings) from wikitext.
@@ -163,7 +152,7 @@ def build_updated_template(template_name, fields):
     parts.append('}}')
     return '|'.join(parts)
 
-def process_citation_template(title, template, archive_url, url_is_dead=False):
+def process_citation_template(title, template, archive_url):
     """Process the citation template"""
     logger.info(f"Processing template for article: {title} with archive url {archive_url}")
 
@@ -181,12 +170,6 @@ def process_citation_template(title, template, archive_url, url_is_dead=False):
     timestamp = arq.archive_timestamp
 
     template.add("wayb", timestamp)
-
-    if url_is_dead:
-        template.add("urlmorta", "sim")
-    else:
-        if template.has("urlmorta"):
-            template.remove("urlmorta")
 
     updated = str(template)
     return updated
@@ -250,7 +233,6 @@ def update_archived_templates_in_article(article: ArticleCheck, archived_url_map
                  title=article.title,
                  template=template,
                  archive_url=archived_url,
-                 url_is_dead=not is_url_alive(url),
             )
             try:
                 new_template = mwparserfromhell.parse(new_template_str).filter_templates()[0]
@@ -346,14 +328,13 @@ def archived_url_map_from_wikitext(initial_archived_url_map, wikitext, article: 
             arq = ArchivedURL(url)
             arq.archive()
             archive_url = arq.archive_url
-        url_is_dead = not is_url_alive(url)
 
         if not archive_url:
             logger.info(f"Archiving failed for {url}")
-            check.set_failed(url_is_dead)
+            check.set_failed()
             continue
 
-        check.set_archived(archive_url, url_is_dead)
+        check.set_archived(archive_url)
         archived_url_map[url] = archive_url
         logger.info(f"Archived URL added to template: {url}")
 

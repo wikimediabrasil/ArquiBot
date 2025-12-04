@@ -25,13 +25,12 @@ class ArticleCheckAdmin(admin.ModelAdmin):
 @admin.register(UrlCheck)
 class UrlCheckAdmin(admin.ModelAdmin):
     search_fields = ["article__title", "url"]
-    list_filter = ["status", "is_url_dead", "modified"]
+    list_filter = ["status", "modified"]
     list_display = [
         "article",
         "url",
         "status",
         "archive_url",
-        "is_url_dead",
         "modified",
     ]
     list_select_related = ["article__wikipedia"]

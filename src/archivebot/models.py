@@ -201,7 +201,6 @@ class UrlCheck(models.Model):
         default=ArchiveStatus.RUNNING,
     )
     archive_url = models.URLField(blank=True, null=True)
-    is_url_dead = models.BooleanField(default=False)
 
     created = models.DateTimeField(auto_now_add=True)
     modified = models.DateTimeField(auto_now=True)
@@ -214,14 +213,12 @@ class UrlCheck(models.Model):
         self.status = self.ArchiveStatus.IGNORED_ARCHIVED
         self.save()
 
-    def set_failed(self, is_url_dead: bool):
-        self.is_url_dead = is_url_dead
+    def set_failed(self):
         self.status = self.ArchiveStatus.FAILED
         self.save()
 
-    def set_archived(self, archive_url: str, is_url_dead: bool):
+    def set_archived(self, archive_url: str):
         self.archive_url = archive_url
-        self.is_url_dead = is_url_dead
         self.status = self.ArchiveStatus.ARCHIVED
         self.save()
 
