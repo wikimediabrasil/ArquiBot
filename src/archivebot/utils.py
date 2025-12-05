@@ -364,6 +364,11 @@ def run_on_recent_changes(diffs: List[Diff]):
     articles = ArticleCheck.from_recent_changes_diffs(diffs)
 
     for article in articles:
+        recent = article.recent_check()
+        if recent:
+            logger.debug(f"{article} skipping: article recently checked: [id={recent.id}] {recent.created}")
+            continue
+
         inserted_wikitext = article.diff_inserted_wikitext()
 
         if not has_citar_templates_mwparser(inserted_wikitext):

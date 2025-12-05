@@ -2,6 +2,7 @@ from unittest.mock import patch, Mock, MagicMock
 import requests
 import requests_mock
 import mwparserfromhell
+from datetime import timedelta
 
 from django.test import TestCase
 from django.test import override_settings
@@ -422,3 +423,28 @@ class ArchivedURLTests(TestCase):
         a = ArchivedURL("https://pt.wikipedia.org")
         a.archive_url = "http://web.archive.org/web/20250115033343/https://pt.wikipedia.org"
         self.assertEqual(a.archive_timestamp, "20250115033343")
+
+class ArticleCheckTests(TestCase):
+    def setUp(self):
+        self.wikipedia = Wikipedia.get()
+        self.article = self.get_article("Test Page")
+
+    def get_article(self, title):
+        wikipedia = Wikipedia.get()
+        article = ArticleCheck.objects.create(wikipedia=wikipedia, title=title)
+        return article
+
+    def test_recent_check(self):
+        past_check = self.get_article("Test")
+        checker = self.get_article("Test")
+        past_check.created = checker.created - timedelta(days=6)
+        past_check.save()
+        self.assertEqual(checker.recent_check().id, past_check.id)
+        past_check.created = checker.created - timedelta(days=7)
+        past_check.save()
+        self.assertIsNone(checker.recent_check())
+        past_check.created = checker.created + timedelta(days=1)
+        past_check.save()
+        self.assertEqual(checker.recent_check().id, past_check.id)
+        past_check.delete()
+        self.assertIsNone(checker.recent_check())

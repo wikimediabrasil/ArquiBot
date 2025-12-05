@@ -1,14 +1,17 @@
 import logging
 import json
 from typing import List
+from typing import Optional
 from dataclasses import dataclass
 from datetime import datetime
+from datetime import timedelta
 from urllib.parse import quote
 
 import requests
 from django.db import models
 from django.conf import settings
 from django.utils.translation import pgettext_lazy
+from django.utils.timezone import now
 
 logger = logging.getLogger("arquibot")
 
@@ -72,6 +75,20 @@ class ArticleCheck(models.Model):
     def edit_url(self):
         if self.edit_id:
             return f"{self.wikipedia.url()}/w/index.php?title={self.title}&diff=prev&oldid={self.edit_id}"
+
+    # ------------
+    # Checks
+    # ------------
+    def recent_check(self) -> Optional["ArticleCheck"]:
+        last_week = now() - timedelta(days=7)
+        query = ArticleCheck.objects.filter(
+            wikipedia=self.wikipedia,
+            title=self.title,
+            created__gte=last_week,
+        ).order_by("-created")
+        if self.id:
+            query = query.exclude(id=self.id)
+        return query.first()
 
     # ------------
     # Diff methods
