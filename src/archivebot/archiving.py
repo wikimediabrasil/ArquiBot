@@ -49,6 +49,7 @@ class ArchivedURL:
             snapshot = data.get("archived_snapshots", {}).get("closest", {})
             if snapshot.get("available"):
                 archive_url = snapshot.get("url")
+                logger.debug(f"Availability response: {data}")
                 logger.info(f"Found existing archive: {self.url} → {archive_url}")
                 self.archive_url = archive_url
             else:
