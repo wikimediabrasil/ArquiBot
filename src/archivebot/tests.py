@@ -3,9 +3,12 @@ import requests
 import requests_mock
 import mwparserfromhell
 from datetime import timedelta
+from datetime import datetime
+from datetime import timezone
 
 from django.test import TestCase
 from django.test import override_settings
+from django.utils.timezone import now
 
 from archivebot.utils import (
     fetch_current_wikitext,
@@ -277,7 +280,9 @@ class TestUtils(TestCase):
             "archived_snapshots": {
                 "closest": {
                     "available": True,
-                    "url": "http://web.archive.org/web/20250815214522/http://brokenlink.com/"
+                    "url": "http://web.archive.org/web/20250815214522/http://brokenlink.com/",
+                    "timestamp": "20250815214522",
+                    "status": "200",
                 }
             }
         }
@@ -292,12 +297,14 @@ class TestUtils(TestCase):
             "archived_snapshots": {
                 "closest": {
                     "available": True,
-                    "url": "https://web.archive.org/web/20220101/https://fallback.com"
+                    "url": "https://web.archive.org/web/20250815214522/https://fallback.com",
+                    "timestamp": "20250815214522",
+                    "status": "200",
                 }
             }
         }
         result = archive_url("https://fallback.com")
-        self.assertEqual(result, "https://web.archive.org/web/20220101/https://fallback.com")
+        self.assertEqual(result, "https://web.archive.org/web/20250815214522/https://fallback.com")
 
     @patch("archivebot.utils.requests.get")
     @patch("archivebot.archiving.WaybackMachineSaveAPI.save", side_effect=Exception("Force fallback"))
@@ -419,10 +426,117 @@ class TestUtils(TestCase):
 
 
 class ArchivedURLTests(TestCase):
+    def mock_availability(self, mocker, data: dict):
+        mocker.get("https://archive.org/wayback/available", json=data, status_code=200)
+
     def test_timestamp(self):
         a = ArchivedURL("https://pt.wikipedia.org")
         a.archive_url = "http://web.archive.org/web/20250115033343/https://pt.wikipedia.org"
         self.assertEqual(a.archive_timestamp, "20250115033343")
+
+    @requests_mock.Mocker()
+    @patch("archivebot.archiving.WaybackMachineSaveAPI.save")
+    def test_ignore_availability_too_recent(self, mocker, mock_save):
+        mock_save.return_value = None
+        timestamp = now().strftime("%Y%m%d%H%M%S")
+        self.mock_availability(
+            mocker,
+            {
+                "archived_snapshots": {
+                    "closest": {
+                        "status": "200",
+                        "url": f"http://web.archive.org/web/{timestamp}/https://pt.wikipedia.org",
+                        "timestamp": timestamp,
+                        "available": True,
+                    }
+                }
+            },
+        )
+        a = ArchivedURL("https://pt.wikipedia.org")
+        a.archive()
+        self.assertIsNone(a.archive_url)
+        self.assertIsNone(a.archive_timestamp)
+
+    @requests_mock.Mocker()
+    @patch("archivebot.archiving.WaybackMachineSaveAPI.save")
+    def test_ignore_availability_old_enough(self, mocker, mock_save):
+        mock_save.return_value = None
+        timestamp = (now() - timedelta(hours=2)).strftime("%Y%m%d%H%M%S")
+        self.mock_availability(
+            mocker,
+            {
+                "archived_snapshots": {
+                    "closest": {
+                        "status": "200",
+                        "url": f"http://web.archive.org/web/{timestamp}/https://pt.wikipedia.org",
+                        "timestamp": timestamp,
+                        "available": True,
+                    }
+                }
+            },
+        )
+        a = ArchivedURL("https://pt.wikipedia.org")
+        a.archive()
+        self.assertIsNotNone(a.archive_url)
+        self.assertIsNotNone(a.archive_timestamp)
+        past_hour = now() - timedelta(hours=1)
+        self.assertLess(datetime.strptime(a.archive_timestamp, "%Y%m%d%H%M%S").replace(tzinfo=timezone.utc), past_hour)
+
+    @requests_mock.Mocker()
+    @patch("archivebot.archiving.WaybackMachineSaveAPI.save")
+    def test_ignore_availability_not_200(self, mocker, mock_save):
+        mock_save.return_value = None
+        timestamp = (now() - timedelta(hours=2)).strftime("%Y%m%d%H%M%S")
+        self.mock_availability(
+            mocker,
+            {
+                "archived_snapshots": {
+                    "closest": {
+                        "status": "404",
+                        "url": f"http://web.archive.org/web/{timestamp}/https://pt.wikipedia.org",
+                        "timestamp": timestamp,
+                        "available": True,
+                    }
+                }
+            },
+        )
+        a = ArchivedURL("https://pt.wikipedia.org")
+        a.archive()
+        self.assertIsNone(a.archive_url)
+        self.assertIsNone(a.archive_timestamp)
+
+    @requests_mock.Mocker()
+    @patch("archivebot.archiving.WaybackMachineSaveAPI.save")
+    def test_ignore_availability_not_available(self, mocker, mock_save):
+        mock_save.return_value = None
+        self.mock_availability(
+            mocker,
+            {
+                "archived_snapshots": {
+                    "closest": {
+                        "available": False,
+                    }
+                }
+            },
+        )
+        a = ArchivedURL("https://pt.wikipedia.org")
+        a.archive()
+        self.assertIsNone(a.archive_url)
+        self.assertIsNone(a.archive_timestamp)
+
+    @requests_mock.Mocker()
+    @patch("archivebot.archiving.WaybackMachineSaveAPI.save")
+    def test_ignore_availability_empty(self, mocker, mock_save):
+        mock_save.return_value = None
+        self.mock_availability(
+            mocker,
+            {},
+        )
+        a = ArchivedURL("https://pt.wikipedia.org")
+        a.archive()
+        self.assertIsNone(a.archive_url)
+        self.assertIsNone(a.archive_timestamp)
+
 
 class ArticleCheckTests(TestCase):
     def setUp(self):
