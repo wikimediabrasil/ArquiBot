@@ -1,7 +1,11 @@
 import logging
 import requests
+from datetime import datetime
+from datetime import timezone
+from datetime import timedelta
 
 from django.conf import settings
+from django.utils.timezone import now
 from waybackpy import WaybackMachineSaveAPI
 
 logger = logging.getLogger("arquibot")
@@ -46,16 +50,35 @@ class ArchivedURL:
             logger.info(f"Trying fallback Wayback availability API for: {self.url}")
             availability_resp = requests.get("https://archive.org/wayback/available", params={"url": self.url}, timeout=30)
             data = availability_resp.json()
+            logger.debug(f"Availability response: {data}")
             snapshot = data.get("archived_snapshots", {}).get("closest", {})
             if snapshot.get("available"):
-                archive_url = snapshot.get("url")
-                logger.debug(f"Availability response: {data}")
-                logger.info(f"Found existing archive: {self.url} → {archive_url}")
-                self.archive_url = archive_url
+                if self.should_use_availability(snapshot):
+                    archive_url = snapshot["url"]
+                    logger.info(f"Found existing archive: {self.url} → {archive_url}")
+                    self.archive_url = archive_url
+                else:
+                    logger.info(f"Skipped availability snapshot: {snapshot}")
+                    return
             else:
                 logger.warning(f"No archive found for: {self.url}")
         except Exception as e:
             logger.error(f"Exception in fallback availability API for {self.url}: {e}")
+
+    def should_use_availability(self, snapshot: dict):
+        """
+        Skips recent availability responses and with status != 200.
+
+        Why skip recent snapshots? It seems after a failed archive, the Availability API
+        can in fact return the snapshot of that attempt, but the archive is not available.
+        Therefore, those archives should be skipped.
+        """
+        timestamp = snapshot["timestamp"]
+        dt = datetime.strptime(timestamp, "%Y%m%d%H%M%S").replace(tzinfo=timezone.utc)
+        past_hour = now() - timedelta(hours=1)
+        is_timestamp_old = dt < past_hour
+        status_is_200 = str(snapshot["status"]) == "200"
+        return status_is_200 and is_timestamp_old
 
     @property
     def is_archived(self):
