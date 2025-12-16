@@ -29,23 +29,6 @@ class ArchivedURL:
         return arch
 
     def archive(self):
-        logger.info(f"Attempting to archive URL: {self.url}")
-
-        try:
-            save_api = WaybackMachineSaveAPI(
-                self.url,
-                self.USER_AGENT,
-                self.WAYBACK_PY_MAX_TRIES,
-            )
-            archive = save_api.save()
-            if hasattr(archive, "archive_url") and archive.archive_url:
-                logger.info(f"Archived via WaybackPy: {self.url} → {archive.archive_url}")
-                self.archive_url = archive.archive_url
-            else:
-                logger.warning(f"WaybackPy returned no archive_url for {self.url}")
-        except Exception as e:
-            logger.error(f"WaybackPy failed for {self.url}: {e}")
-
         try:
             logger.info(f"Trying fallback Wayback availability API for: {self.url}")
             availability_resp = requests.get("https://archive.org/wayback/available", params={"url": self.url}, timeout=30)
@@ -57,13 +40,31 @@ class ArchivedURL:
                     archive_url = snapshot["url"]
                     logger.info(f"Found existing archive: {self.url} → {archive_url}")
                     self.archive_url = archive_url
+                    return
                 else:
                     logger.info(f"Skipped availability snapshot: {snapshot}")
-                    return
             else:
                 logger.warning(f"No archive found for: {self.url}")
         except Exception as e:
             logger.error(f"Exception in fallback availability API for {self.url}: {e}")
+
+        try:
+            logger.info(f"Attempting to archive URL: {self.url}")
+            save_api = WaybackMachineSaveAPI(
+                self.url,
+                self.USER_AGENT,
+                self.WAYBACK_PY_MAX_TRIES,
+            )
+            archive = save_api.save()
+            if hasattr(archive, "archive_url") and archive.archive_url:
+                logger.info(f"Archived via WaybackPy: {self.url} → {archive.archive_url}")
+                self.archive_url = archive.archive_url
+                return
+            else:
+                logger.warning(f"WaybackPy returned no archive_url for {self.url}")
+        except Exception as e:
+            logger.error(f"WaybackPy failed for {self.url}: {e}")
+
 
     def should_use_availability(self, snapshot: dict):
         """
