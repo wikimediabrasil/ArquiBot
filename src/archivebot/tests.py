@@ -357,8 +357,16 @@ class TestUtils(TestCase):
 
         self.assertIsNone(result2)
 
-        # --- New test case: skips if no url or empty url ---
-        for template_str3 in ['{{Citar web|title=Example}}', '{{Citar web|url=  }}']:
+        # skips if no url, empty url or archived url
+        for template_str3 in [
+            '{{Citar web|title=Example}}',
+            '{{Citar web|url=  }}',
+            '{{Citar web|arquivourl=http://web.archive.org/web/20250115032356/https://pt.wikipedia.org/}}',
+            '{{Citar web|arquivo-url=http://web.archive.org/web/20250115032356/https://pt.wikipedia.org/}}',
+            '{{Citar web|archiveurl=http://web.archive.org/web/20250115032356/https://pt.wikipedia.org/}}',
+            '{{Citar web|archive-url=http://web.archive.org/web/20250115032356/https://pt.wikipedia.org/}}',
+            '{{Citar web|url-arquivo=http://web.archive.org/web/20250115032356/https://pt.wikipedia.org/}}',
+        ]:
             wikicode3 = mwparserfromhell.parse(template_str3)
             tpl3 = wikicode3.filter_templates()[0]
 

@@ -33,6 +33,13 @@ HEADERS = {
     "Content-Type": "application/json",
 }
 
+ARCHIVE_URL_PARAMS = set([
+    "arquivourl",
+    "arquivo-url",
+    "urlarquivo",
+    "archive-url",
+    "archiveurl",
+])
 
 def get_recent_changes_with_diff(last_hours=LAST_HOURS):
     """Fetch recent changes with diffs using generator=recentchanges, rvdiffto=prev and grccontinue."""
@@ -157,8 +164,8 @@ def process_citation_template(title, template, archive_url):
     logger.info(f"Processing template for article: {title} with archive url {archive_url}")
 
     param_names = [param.name.strip().lower() for param in template.params]
-    if 'arquivourl' in param_names or 'wayb' in param_names:
-        logger.info(f"Skipping {title}: Template already has arquivourl or wayb")
+    if not ARCHIVE_URL_PARAMS.isdisjoint(param_names):
+        logger.info(f"Skipping {title}: Template already archived")
         return None
 
     if not template.has("url") or not template.get("url").value.strip():
@@ -312,9 +319,12 @@ def archived_url_map_from_wikitext(initial_archived_url_map, wikitext, article: 
         processed_urls.add(url)
 
         # Skip templates already archived in DB
+        tmpl_already_archived = any([
+            tmpl.has(param) for param in ARCHIVE_URL_PARAMS
+        ])
         templates_to_process = [
             tmpl for tmpl in templates
-            if url not in archived_url_map and not tmpl.has("arquivourl") and not tmpl.has("wayb")
+            if url not in archived_url_map and not tmpl_already_archived
         ]
 
         if not templates_to_process:
