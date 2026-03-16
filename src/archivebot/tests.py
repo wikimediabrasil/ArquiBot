@@ -366,6 +366,7 @@ class TestUtils(TestCase):
             '{{Citar web|url=http://pt.wikipedia.org/|arquivo-url=http://web.archive.org/web/20250115032356/https://pt.wikipedia.org/}}',
             '{{Citar web|url=http://pt.wikipedia.org/|archiveurl=http://web.archive.org/web/20250115032356/https://pt.wikipedia.org/}}',
             '{{Citar web|url=http://pt.wikipedia.org/|archive-url=http://web.archive.org/web/20250115032356/https://pt.wikipedia.org/}}',
+            '{{Citar web|url=http://pt.wikipedia.org/|urlarquivo=http://web.archive.org/web/20250115032356/https://pt.wikipedia.org/}}',
             '{{Citar web|url=http://pt.wikipedia.org/|url-arquivo=http://web.archive.org/web/20250115032356/https://pt.wikipedia.org/}}',
         ]:
             wikicode3 = mwparserfromhell.parse(template_str3)

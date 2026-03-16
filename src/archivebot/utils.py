@@ -37,6 +37,7 @@ ARCHIVE_URL_PARAMS = set([
     "arquivourl",
     "arquivo-url",
     "urlarquivo",
+    "url-arquivo",
     "archive-url",
     "archiveurl",
     "wayb",
@@ -162,11 +163,11 @@ def build_updated_template(template_name, fields):
 
 def process_citation_template(title, template, archive_url):
     """Process the citation template"""
-    logger.info(f"Processing template for article: {title} with archive url {archive_url}")
+    logger.info(f"Processing template for article: {title} with archive url {archive_url}, template: {template}")
 
     param_names = [param.name.strip().lower() for param in template.params]
     if not ARCHIVE_URL_PARAMS.isdisjoint(param_names):
-        logger.info(f"Skipping {title}: Template already archived")
+        logger.info(f"Skipping template for {title}: already archived")
         return None
 
     if not template.has("url") or not template.get("url").value.strip():
