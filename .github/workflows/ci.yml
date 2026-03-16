@@ -36,7 +36,7 @@ jobs:
         LOG_LEVEL: "DEBUG"
         ARQUIBOT_TOKEN: "123"
         WIKIPEDIA_CODE: "test"
-        USER_AGENT: "ArquiBot/1.0 (https://pt.wikipedia.org/wiki/Usuário(a):ArquiBot)"
+        USER_AGENT: "ArquiBot (https://pt.wikipedia.org/wiki/Usuário(a):ArquiBot)"
       run: |
          cd src
          python3 manage.py test
