@@ -165,8 +165,7 @@ def process_citation_template(title, template, archive_url):
     """Process the citation template"""
     logger.info(f"Processing template for article: {title} with archive url {archive_url}, template: {template}")
 
-    param_names = [param.name.strip().lower() for param in template.params]
-    if not ARCHIVE_URL_PARAMS.isdisjoint(param_names):
+    if template_already_archived(template):
         logger.info(f"Skipping template for {title}: already archived")
         return None
 
@@ -182,6 +181,10 @@ def process_citation_template(title, template, archive_url):
 
     updated = str(template)
     return updated
+
+def template_already_archived(template):
+    params = [param.name.strip().lower() for param in template.params]
+    return not ARCHIVE_URL_PARAMS.isdisjoint(params)
 
 def extract_external_links_from_text(text):
     """Extract external URLs from plain text using mwparserfromhell external link filter."""
@@ -321,12 +324,9 @@ def archived_url_map_from_wikitext(initial_archived_url_map, wikitext, article: 
         processed_urls.add(url)
 
         # Skip templates already archived in DB
-        tmpl_already_archived = any([
-            tmpl.has(param) for param in ARCHIVE_URL_PARAMS
-        ])
         templates_to_process = [
             tmpl for tmpl in templates
-            if url not in archived_url_map and not tmpl_already_archived
+            if url not in archived_url_map and not template_already_archived(tmpl)
         ]
 
         if not templates_to_process:
