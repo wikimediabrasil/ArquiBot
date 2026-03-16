@@ -290,7 +290,7 @@ def archived_url_map_from_wikitext(initial_archived_url_map, wikitext, article: 
         archived_url_map = {}
 
     citar_templates = extract_citar_templates_mwparser(wikitext)
-    logger.debug(f"{article} citar templates extracted ({len(citar_templates)}): {citar_templates}")
+    logger.debug(f"{article} citar templates extracted ({len(citar_templates)})")
 
     # Map URLs to templates
     url_to_templates = {}
@@ -306,15 +306,13 @@ def archived_url_map_from_wikitext(initial_archived_url_map, wikitext, article: 
         for template in templates:
             logger.debug(f"url={url}, template={template}")
 
-    title = article.title
-
     for url, templates in url_to_templates.items():
         check: UrlCheck = UrlCheck.objects.create(
             article=article,
             url=url,
         )
         if any([url.lower().startswith(prefix) for prefix in SKIPPED_URL_PREFIXES]):
-            logger.info(f"Skipping DOI or archived URL: {url}")
+            logger.info(f"{check} skipping DOI or archived URL: {url}")
             check.set_ignored_permalink()
             continue
 
@@ -330,9 +328,11 @@ def archived_url_map_from_wikitext(initial_archived_url_map, wikitext, article: 
         ]
 
         if not templates_to_process:
-            logger.debug(f"url={url} in [{title}] already archived.")
+            logger.debug(f"{check} already archived.")
             check.set_ignored_archived()
             continue
+
+        logger.info(f"{check} templates to update: {templates_to_process}")
 
         archive_url = archived_url_map.get(url)
         if not archive_url:
@@ -342,13 +342,13 @@ def archived_url_map_from_wikitext(initial_archived_url_map, wikitext, article: 
             archive_url = arq.archive_url
 
         if not archive_url:
-            logger.info(f"Archiving failed for {url}")
+            logger.info(f"{check} archiving failed")
             check.set_failed()
             continue
 
         check.set_archived(archive_url)
         archived_url_map[url] = archive_url
-        logger.info(f"Archived URL added to template: {url}")
+        logger.info(f"{check} archived URL added to template!")
 
     return archived_url_map
 

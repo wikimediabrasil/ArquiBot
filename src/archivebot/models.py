@@ -222,6 +222,10 @@ class UrlCheck(models.Model):
     created = models.DateTimeField(auto_now_add=True)
     modified = models.DateTimeField(auto_now=True)
 
+    def __str__(self):
+        article = self.article
+        return f"{article} [{self.url}] [{self.status}]"
+
     def set_ignored_permalink(self):
         self.status = self.ArchiveStatus.IGNORED_PERMALINK
         self.save()

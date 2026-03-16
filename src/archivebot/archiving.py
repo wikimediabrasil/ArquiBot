@@ -30,7 +30,7 @@ class ArchivedURL:
 
     def archive(self):
         try:
-            logger.info(f"Trying fallback Wayback availability API for: {self.url}")
+            logger.debug(f"Trying fallback Wayback availability API for: {self.url}")
             availability_resp = requests.get("https://archive.org/wayback/available", params={"url": self.url}, timeout=30)
             data = availability_resp.json()
             logger.debug(f"Availability response: {data}")
@@ -38,18 +38,18 @@ class ArchivedURL:
             if snapshot.get("available"):
                 if self.should_use_availability(snapshot):
                     archive_url = snapshot["url"]
-                    logger.info(f"Found existing archive: {self.url} → {archive_url}")
+                    logger.debug(f"Found existing archive: {self.url} → {archive_url}")
                     self.archive_url = archive_url
                     return
                 else:
-                    logger.info(f"Skipped availability snapshot: {snapshot}")
+                    logger.debug(f"Skipped availability snapshot: {snapshot}")
             else:
                 logger.warning(f"No archive found for: {self.url}")
         except Exception as e:
             logger.error(f"Exception in fallback availability API for {self.url}: {e}")
 
         try:
-            logger.info(f"Attempting to archive URL: {self.url}")
+            logger.debug(f"Attempting to archive URL: {self.url}")
             save_api = WaybackMachineSaveAPI(
                 self.url,
                 self.USER_AGENT,
@@ -57,7 +57,7 @@ class ArchivedURL:
             )
             archive = save_api.save()
             if hasattr(archive, "archive_url") and archive.archive_url:
-                logger.info(f"Archived via WaybackPy: {self.url} → {archive.archive_url}")
+                logger.debug(f"Archived via WaybackPy: {self.url} → {archive.archive_url}")
                 self.archive_url = archive.archive_url
                 return
             else:
