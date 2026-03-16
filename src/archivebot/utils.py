@@ -39,6 +39,7 @@ ARCHIVE_URL_PARAMS = set([
     "urlarquivo",
     "archive-url",
     "archiveurl",
+    "wayb",
 ])
 
 def get_recent_changes_with_diff(last_hours=LAST_HOURS):

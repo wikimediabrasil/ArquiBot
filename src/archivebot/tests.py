@@ -361,11 +361,12 @@ class TestUtils(TestCase):
         for template_str3 in [
             '{{Citar web|title=Example}}',
             '{{Citar web|url=  }}',
-            '{{Citar web|arquivourl=http://web.archive.org/web/20250115032356/https://pt.wikipedia.org/}}',
-            '{{Citar web|arquivo-url=http://web.archive.org/web/20250115032356/https://pt.wikipedia.org/}}',
-            '{{Citar web|archiveurl=http://web.archive.org/web/20250115032356/https://pt.wikipedia.org/}}',
-            '{{Citar web|archive-url=http://web.archive.org/web/20250115032356/https://pt.wikipedia.org/}}',
-            '{{Citar web|url-arquivo=http://web.archive.org/web/20250115032356/https://pt.wikipedia.org/}}',
+            '{{Citar web|url=http://pt.wikipedia.org/|wayb=20250115032356}}',
+            '{{Citar web|url=http://pt.wikipedia.org/|arquivourl=http://web.archive.org/web/20250115032356/https://pt.wikipedia.org/}}',
+            '{{Citar web|url=http://pt.wikipedia.org/|arquivo-url=http://web.archive.org/web/20250115032356/https://pt.wikipedia.org/}}',
+            '{{Citar web|url=http://pt.wikipedia.org/|archiveurl=http://web.archive.org/web/20250115032356/https://pt.wikipedia.org/}}',
+            '{{Citar web|url=http://pt.wikipedia.org/|archive-url=http://web.archive.org/web/20250115032356/https://pt.wikipedia.org/}}',
+            '{{Citar web|url=http://pt.wikipedia.org/|url-arquivo=http://web.archive.org/web/20250115032356/https://pt.wikipedia.org/}}',
         ]:
             wikicode3 = mwparserfromhell.parse(template_str3)
             tpl3 = wikicode3.filter_templates()[0]
