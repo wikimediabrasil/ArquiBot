@@ -265,7 +265,7 @@ def update_archived_templates_in_article(article: ArticleCheck, archived_url_map
 
     try:
         article.edit_and_save(new_source=str(wikicode), comment=comment, latest_id=latest_id)
-        return True, f"{article} Successfully updated archived templates in."
+        return True, "Successfully updated."
     except Exception as e:
         return False, f"Failed to commit edit: {e}"
 
@@ -358,12 +358,13 @@ def run_archive_bot(interval_hours: int = 168):
     run_on_recent_changes(recent_changes)
 
 
-def run_rc_date(date):
+def run_rc_date(date, stop_at_edit_count: int = None):
+    logger.info(f"Obtaining Recent Changes of {date=}")
     recent_changes = get_recent_changes_from_dates(date, date)
-    run_on_recent_changes(recent_changes)
+    run_on_recent_changes(recent_changes, stop_at_edit_count=stop_at_edit_count)
 
 
-def run_on_recent_changes(diffs: List[Diff]):
+def run_on_recent_changes(diffs: List[Diff], stop_at_edit_count: int = None):
     logger.info("Archive Bot started.")
 
     if not diffs:
@@ -374,6 +375,7 @@ def run_on_recent_changes(diffs: List[Diff]):
 
     archived_url_map = {}
     articles = ArticleCheck.from_recent_changes_diffs(diffs)
+    edit_count = 0
 
     for article in articles:
         recent = article.recent_check()
@@ -394,6 +396,13 @@ def run_on_recent_changes(diffs: List[Diff]):
 
         archived_url_map = archived_url_map_from_wikitext({}, wikitext, article)
         success, msg = update_archived_templates_in_article(article, archived_url_map)
+        if success is True:
+            edit_count += 1
         logger.info(f"{article} result: {msg}")
+
+        if stop_at_edit_count:
+            logger.info(f"{edit_count}/{stop_at_edit_count} edits - capped by {stop_at_edit_count=}")
+            if edit_count >= stop_at_edit_count:
+                break
 
     logger.info("Archive Bot finished.")
