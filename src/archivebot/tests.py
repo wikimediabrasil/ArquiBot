@@ -53,13 +53,6 @@ class TestUtils(TestCase):
             status_code=200,
         )
 
-    def mock_rest_put(self, mocker, data):
-        mocker.put(
-            self.article._page_endpoint(),
-            json=data,
-            status_code=200,
-        )
-
     def mock_page_source(self, mocker, source):
         data = {
             "source": source,
@@ -68,13 +61,22 @@ class TestUtils(TestCase):
         self.mock_rest_get(mocker, data)
 
     def mock_edit_id(self, mocker, edit_id):
-        self.mock_rest_put(mocker, {"latest": {"id": edit_id}})
+        mocker.get(
+            self.article.wikipedia.action_api(),
+            json={"query": {"tokens": {"csrftoken": "CSRF_TOKEN"}}},
+            status_code=200,
+        )
+        mocker.post(
+            self.article.wikipedia.action_api(),
+            json={"edit": {"newrevid": edit_id}},
+            status_code=200,
+        )
 
     def mock_edit_fail(self, mocker):
-        mocker.put(
-            self.article._page_endpoint(),
-            json={"message": "edit failed"},
-            status_code=400,
+        mocker.post(
+            self.article.wikipedia.action_api(),
+            json={"error": {"info": "error"}},
+            status_code=200,
         )
 
     #  fetch_current_wikitext_ptwiki tests

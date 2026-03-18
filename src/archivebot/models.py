@@ -1,5 +1,4 @@
 import logging
-import json
 from typing import List
 from typing import Optional
 from dataclasses import dataclass
@@ -49,6 +48,12 @@ class Wikipedia(models.Model):
             "Content-Type": "application/json",
         }
 
+    def headers_action(self):
+        # Action API completely IGNORES the post body if it's application/json, arghh
+        return {
+            "Authorization": f"Bearer {settings.ARQUIBOT_TOKEN}",
+            "User-Agent": settings.USER_AGENT,
+        }
 
 
 class ArticleCheck(models.Model):
@@ -160,24 +165,47 @@ class ArticleCheck(models.Model):
         return self.page_data().get("source", "")
 
     def _request_edit(self, new_source: str, comment: str, latest_id: str):
-        logger.debug(f"{self} sending edit request...")
-        payload = {
-            "source": new_source,
-            "comment": comment,
-            "latest": {"id": latest_id},
+        session = requests.Session()
+        params = {
+            "action": "query",
+            "meta": "tokens",
+            "format": "json",
+            "assert": "user",
         }
-        response = requests.put(
-            self._page_endpoint(),
-            headers=self.wikipedia.headers(),
-            data=json.dumps(payload),
+        logger.debug(f"{self} sending GET request for csrftoken...")
+        response = session.get(
+            self.wikipedia.action_api(),
+            params=params,
+            headers=self.wikipedia.headers_action(),
         )
-        logger.debug(f"{self} response.text={response.text}")
         response.raise_for_status()
+        token = response.json()["query"]["tokens"]["csrftoken"]
+        data = {
+            "action": "edit",
+            "assert": "bot",
+            "bot": 1,
+            "token": token,
+            "baserevid": latest_id,
+            "summary": comment,
+            "text": new_source,
+            "title": self.title,
+            "format": "json",
+        }
+        logger.debug(f"{self} sending edit request...")
+        response = session.post(
+            self.wikipedia.action_api(),
+            headers=self.wikipedia.headers_action(),
+            data=data,
+        )
+        logger.debug(f"{self} reponse.text: {response.text}")
+        response.raise_for_status()
+        data = response.json()
+        assert "edit" in data
         return response.json()
 
     def edit_and_save(self, new_source: str, comment: str, latest_id: str):
         data = self._request_edit(new_source, comment, latest_id)
-        self.edit_id = data.get("latest", {}).get("id")
+        self.edit_id = data.get("edit", {}).get("newrevid")
         self.save()
 
 
