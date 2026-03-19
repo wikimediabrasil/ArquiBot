@@ -34,7 +34,7 @@ class Command(BaseCommand):
                     run_rc_date(yesterday, stop_at_edit_count=stop_at_edit_count)
                 except Exception as e:
                     logger.error(f"error for {yesterday} Recent Changes: {e}")
-            self.wait_until_tomorrow(yesterday)
+            self.wait_until_tomorrow()
 
     def yesterday(self):
         today_utc = self.now.astimezone(UTC).date()
