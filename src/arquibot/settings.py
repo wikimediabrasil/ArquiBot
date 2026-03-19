@@ -126,11 +126,6 @@ LOGGING = {
             "class": "logging.StreamHandler",
             "formatter": "django",
         },
-        "file": {
-            "class": "logging.FileHandler",
-            "filename": "archivebot.log",
-            "formatter": "django",
-        },
     },
     "loggers": {
         "django": {
@@ -138,7 +133,7 @@ LOGGING = {
             "level": "INFO",
         },
         "arquibot": {
-            "handlers": ["django", "file"],
+            "handlers": ["django"],
             "level": os.environ.get("LOG_LEVEL", "INFO"),
         },
     },
