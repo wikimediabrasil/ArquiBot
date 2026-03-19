@@ -23,6 +23,7 @@ HEADERS = {
 
 class Wikipedia(models.Model):
     code = models.CharField(max_length=32, help_text="'pt', 'test', etc")
+    bot_edit = models.BooleanField(default=True, help_text="If to mark edits as a bot edit")
 
     def __str__(self):
         return self.code + " wikipedia"
@@ -182,8 +183,7 @@ class ArticleCheck(models.Model):
         token = response.json()["query"]["tokens"]["csrftoken"]
         data = {
             "action": "edit",
-            "assert": "bot",
-            "bot": 1,
+            "assert": "user",
             "token": token,
             "baserevid": latest_id,
             "summary": comment,
@@ -191,6 +191,9 @@ class ArticleCheck(models.Model):
             "title": self.title,
             "format": "json",
         }
+        if self.wikipedia.bot_edit:
+            data["assert"] = "bot"
+            data["bot"] = 1
         logger.debug(f"{self} sending edit request...")
         response = session.post(
             self.wikipedia.action_api(),
