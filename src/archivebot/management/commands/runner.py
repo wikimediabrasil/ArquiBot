@@ -55,11 +55,14 @@ class Command(BaseCommand):
         return edits_today >= edit_count
 
     def wait_until_tomorrow(self):
-        tomorrow_6am = (self.now + timedelta(days=1)).replace(hour=6)
-        wait_sec = (tomorrow_6am - self.now).total_seconds()
-        wait_hours = wait_sec / 3600
-        logger.info(f"sleeping for {wait_hours} hours...")
-        time.sleep(wait_sec)
+        next_day_6am = (self.now + timedelta(days=1)).replace(hour=6)
+        wait_sec = (next_day_6am - now()).total_seconds()
+        if wait_sec > 0:
+            wait_hours = wait_sec / 3600
+            logger.info(f"sleeping for {wait_hours:.3f} hours until '{next_day_6am}'...")
+            time.sleep(wait_sec)
+        else:
+            logger.info(f"already reached '{next_day_6am}', not waiting...")
 
     def stop_at_edit_count(self, stop_at_edit_coun_str: str = None):
         try:
