@@ -29,7 +29,7 @@ class Command(BaseCommand):
         while True:
             self.now = now()
             yesterday = self.yesterday()
-            if not self.yesterday_already_checked():
+            if not self.reached_edit_count_today(stop_at_edit_count):
                 try:
                     run_rc_date(yesterday, stop_at_edit_count=stop_at_edit_count)
                 except Exception as e:
@@ -40,17 +40,25 @@ class Command(BaseCommand):
         today_utc = self.now.astimezone(UTC).date()
         return today_utc - timedelta(days=1)
 
-    def yesterday_already_checked(self):
+    def reached_edit_count_today(self, edit_count):
         wikipedia = Wikipedia.get()
-        return ArticleCheck.objects.filter(
-            wikipedia=wikipedia, created__date=self.yesterday()
-        ).exists()
+        today = self.now.astimezone(UTC).date()
+        edits_today = (
+            ArticleCheck.objects.filter(
+                wikipedia=wikipedia,
+                created__date=today,
+            )
+            .exclude(edit_id__isnull=True)
+            .count()
+        )
+        logger.info(f"reached {edits_today}/{edit_count} edits today...")
+        return edits_today >= edit_count
 
     def wait_until_tomorrow(self):
-        tomorrow_6am = (self.now + timedelta(days=1)).replace(hours=6)
+        tomorrow_6am = (self.now + timedelta(days=1)).replace(hour=6)
         wait_sec = (tomorrow_6am - self.now).total_seconds()
         wait_hours = wait_sec / 3600
-        logger.info(f"sleeping for {wait_hours:.3f}... hours")
+        logger.info(f"sleeping for {wait_hours} hours...")
         time.sleep(wait_sec)
 
     def stop_at_edit_count(self, stop_at_edit_coun_str: str = None):
