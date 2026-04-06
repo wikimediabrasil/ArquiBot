@@ -353,23 +353,18 @@ def archived_url_map_from_wikitext(initial_archived_url_map, wikitext, article: 
     return archived_url_map
 
 
-def run_archive_bot(interval_hours: int = 168):
-    recent_changes = get_recent_changes_with_diff(last_hours=interval_hours) # recent_changes = get_recent_changes_with_diff(grclimit=50, last_hours=interval_hours)
-    run_on_recent_changes(recent_changes)
-
-
-def run_rc_date(date, stop_at_edit_count: int = None):
+def run_rc_date(date, stop_at_edit_count: int = None) -> int:
     logger.info(f"Obtaining Recent Changes of {date=}")
     recent_changes = get_recent_changes_from_dates(date, date)
-    run_on_recent_changes(recent_changes, stop_at_edit_count=stop_at_edit_count)
+    return run_on_recent_changes(recent_changes, stop_at_edit_count=stop_at_edit_count)
 
 
-def run_on_recent_changes(diffs: List[Diff], stop_at_edit_count: int = None):
+def run_on_recent_changes(diffs: List[Diff], stop_at_edit_count: int = None) -> int:
     logger.info("Archive Bot started.")
 
     if not diffs:
         logger.info("No recent changes found.")
-        return
+        return 0
 
     logger.info(f"Found {len(diffs)} diffs to process.")
 
@@ -406,3 +401,4 @@ def run_on_recent_changes(diffs: List[Diff], stop_at_edit_count: int = None):
                 break
 
     logger.info("Archive Bot finished.")
+    return edit_count
