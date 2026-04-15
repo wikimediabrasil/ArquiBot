@@ -10,7 +10,15 @@ Enter the `src/` directory.
 
 Copy `.env.sample` to `.env` and provide the environment variables.
 
-To authenticate it locally, you will need to use the developer access. Request an access token at <https://api.wikimedia.org/wiki/Special:AppManagement>, click on "Create key". You should ask for a **Personal API token**, allow it to create and edit items and save. Copy the **Access token** to fill `ARQUIBOT_TOKEN`.
+To authenticate it locally, you will need to use the developer access. 
+
+#### After ensuring you have developer access, you can either:
+
+* Request an access token at <https://api.wikimedia.org/wiki/Special:AppManagement>, click on "Create key". You should ask for a **Personal API token**, allow it to create and edit items and save. Copy the **Access token** to fill `ARQUIBOT_TOKEN`.
+
+OR
+
+* You access https://meta.wikimedia.org/wiki/Special:OAuthConsumerRegistration/propose/oauth2 and select "owner-only" when choosing how to grant permissions. Please remember to allow it to create and edit items and save. Copy the **Access token** to fill `ARQUIBOT_TOKEN`.
 
 Setup a python virtual environment using `requirements.txt`. An easy way to do that is to run `nix-shell`.
 
