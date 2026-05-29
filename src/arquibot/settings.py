@@ -64,6 +64,7 @@ INSTALLED_APPS = [
     'django.contrib.messages',
     'django.contrib.staticfiles',
     'archivebot',
+    'stats',
     'rest_framework',
 ]
 

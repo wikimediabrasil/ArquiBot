@@ -6,9 +6,22 @@ from django.utils import timezone
 from django.utils.timezone import now
 
 from archivebot.models import UrlCheck
+from stats.models import Statistics
 
 
-def stats_page(request):
+def home(request):
+    statistics = (
+        Statistics.objects.all().exclude(edits=0).exclude(wikipedia__code="test")
+    )
+    timestamp = statistics.first().timestamp
+    data = {
+        "statistics": statistics,
+        "timestamp": timestamp,
+    }
+    return render(request, "home.html", data)
+
+
+def logs(request):
     request_date = request.GET.get("date")
     if request_date:
         date = datetime.strptime(request_date, "%Y-%m-%d")
@@ -30,4 +43,4 @@ def stats_page(request):
         "urls": urls,
     }
 
-    return render(request, "archivebot/stats.html", data)
+    return render(request, "logs.html", data)

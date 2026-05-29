@@ -23,9 +23,19 @@ body {
   padding: 1rem;
 }
 
+a {
+  color: var(--text-color);
+}
+
 h1 {
   text-align: center;
   margin-bottom: 1rem;
+}
+
+h2 {
+  text-align: center;
+  margin-bottom: 1rem;
+  margin-top: 2em;
 }
 
 /* Toggle container aligned top-right */

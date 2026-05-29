@@ -3,7 +3,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>Arquibot Log</title>
+  <title>{% block pagetitle %}ArquiBot{% endblock pagetitle %}</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <link rel="stylesheet" href="{% static 'archivebot/css/style.css' %}" />
 </head>
@@ -17,49 +17,13 @@
       </span>
     </label>
   </div>
-  <h1>Arquibot Log</h1>
+  <h1>ArquiBot</h1>
+  <p style="text-align: center;">
+    <a href="{% url 'home' %}">home</a> | <a href="{% url 'logs' %}">logs</a>
+  </p>
 
-  <form method="get">
-  <label for="date-filter">Filter by date (UTC):</label>
-  <input type="date" name="date" id="date-filter" value="{{ date_fmt }}" onchange="this.form.submit()">
-
-  <table>
-    <thead>
-      <tr>
-        <th>Wikipedia</th>
-        <th>Article</th>
-        <th>URL</th>
-        <th>Status</th>
-        <th>Timestamp</th>
-        <th>Edit</th>
-      </tr>
-    </thead>
-    <tbody id="stats-body">
-      {% for url in urls %}
-      {% with url.article.wikipedia as wikipedia %}
-      <tr>
-        <td><a href="{{ wikipedia.url}}">{{ wikipedia.code }}</a></td>
-        <td><a href="{{ url.article.url}}">{{ url.article.title }}</a></td>
-        <td style="word-wrap: break-word; max-width: 500px"><a href="{{ url.url}}">{{ url.url }}</a></td>
-        <td>
-          {% if url.archive_url %}
-          <a href="{{ url.archive_url}}">{{ url.get_status_display }}</a>
-          {% else %}
-          {{ url.get_status_display }}
-          {% endif %}
-        </td>
-        <td>{{ url.modified }}</td>
-        <td>
-          {% if url.article.edit_id and url.archive_url %}
-          <a href="{{ url.article.edit_url}}">{{ url.article.edit_id }}</a>
-          {% endif %}
-        </td>
-      </tr>
-      {% endwith %}
-      {% endfor %}
-    </tbody>
-  </table>
-  </form>
+  {% block content %}
+  {% endblock content %}
 
   <script>
   function detectSystemTheme() {

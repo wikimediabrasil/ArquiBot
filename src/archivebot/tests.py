@@ -38,12 +38,12 @@ def archive_url(url):
 )
 class TestUtils(TestCase):
     def setUp(self):
-        self.wikipedia = Wikipedia.get()
+        self.wikipedia, _ = Wikipedia.objects.get_or_create(code="test")
         self.article = self.get_article("Test Page")
 
     def get_article(self, title):
-        wikipedia = Wikipedia.get()
-        article = ArticleCheck.objects.create(wikipedia=wikipedia, title=title)
+        self.wikipedia, _ = Wikipedia.objects.get_or_create(code="test")
+        article = ArticleCheck.objects.create(wikipedia=self.wikipedia, title=title)
         return article
 
     def mock_rest_get(self, mocker, data):
@@ -552,12 +552,11 @@ class ArchivedURLTests(TestCase):
 
 class ArticleCheckTests(TestCase):
     def setUp(self):
-        self.wikipedia = Wikipedia.get()
+        self.wikipedia, _ = Wikipedia.objects.get_or_create(code="test")
         self.article = self.get_article("Test Page")
 
     def get_article(self, title):
-        wikipedia = Wikipedia.get()
-        article = ArticleCheck.objects.create(wikipedia=wikipedia, title=title)
+        article = ArticleCheck.objects.create(wikipedia=self.wikipedia, title=title)
         return article
 
     def test_recent_check(self):
