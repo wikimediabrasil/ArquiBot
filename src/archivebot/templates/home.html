@@ -1,0 +1,29 @@
+{% extends "layout.html" %}
+
+{% block pagetitle %}ArquiBot{% endblock pagetitle %}
+
+{% block content %}
+
+<h2>Global statistics</h2>
+<p style="text-align: center; font-size: 0.9em;">({{ timestamp }})</p>
+
+<table>
+  <thead>
+    <tr>
+      <th>Wikipedia</th>
+      <th>Edits</th>
+      <th>URLs archived</th>
+    </tr>
+  </thead>
+  <tbody id="stats-body">
+    {% for stats in statistics %}
+    <tr>
+      <td style="font-size: 1.4em;">{{ stats.wikipedia.code }} (<a href="{{ stats.wikipedia.url }}/wiki/Special:Contributions/ArquiBot">contribs</a>)</td>
+      <td style="font-size: 1.8em;">{{ stats.edits }}</td>
+      <td style="font-size: 1.8em;">{{ stats.urls_archived }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+{% endblock content %}
