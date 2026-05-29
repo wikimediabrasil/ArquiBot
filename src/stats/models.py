@@ -24,14 +24,11 @@ class StatisticsManager(models.Manager):
             point_in_time = now() if point_in_time is None else point_in_time
             stats, created = self.get_or_create(wikipedia=wikipedia)
 
-            query = ArticleCheck.objects.filter(
+            stats.edits = ArticleCheck.objects.filter(
                 wikipedia=wikipedia,
                 edit_id__isnull=False,
                 modified__lte=point_in_time,
-            )
-            for a in query:
-                logger.info(f"{a} {a.edit_id} - {a.modified}")
-            stats.edits = query.count()
+            ).count()
 
             stats.urls_archived = UrlCheck.objects.filter(
                 article__wikipedia=wikipedia,
