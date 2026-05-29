@@ -1,6 +1,7 @@
 import logging
 
 from django.db import models
+from django.db.models import Count
 from django.utils.timezone import now
 
 from archivebot.models import Wikipedia
@@ -24,11 +25,16 @@ class StatisticsManager(models.Manager):
             point_in_time = now() if point_in_time is None else point_in_time
             stats, created = self.get_or_create(wikipedia=wikipedia)
 
-            stats.edits = ArticleCheck.objects.filter(
+            query = ArticleCheck.objects.filter(
                 wikipedia=wikipedia,
                 edit_id__isnull=False,
                 modified__lte=point_in_time,
-            ).count()
+            )
+            stats.edits = query.count()
+
+            stats.articles = query.aggregate(
+                articles=Count("title", distinct=True),
+            )["articles"]
 
             stats.urls_archived = UrlCheck.objects.filter(
                 article__wikipedia=wikipedia,
@@ -50,6 +56,10 @@ class Statistics(models.Model):
     edits = models.PositiveIntegerField(
         default=0,
         help_text="Total number of edits",
+    )
+    articles = models.PositiveIntegerField(
+        default=0,
+        help_text="Total number of articles edited",
     )
     urls_archived = models.PositiveIntegerField(
         default=0,

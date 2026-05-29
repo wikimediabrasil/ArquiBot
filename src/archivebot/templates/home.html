@@ -11,7 +11,7 @@
   <thead>
     <tr>
       <th>Wikipedia</th>
-      <th>Edits</th>
+      <th>Articles edited</th>
       <th>URLs archived</th>
     </tr>
   </thead>
@@ -19,7 +19,7 @@
     {% for stats in statistics %}
     <tr>
       <td style="font-size: 1.4em;">{{ stats.wikipedia.code }} (<a href="{{ stats.wikipedia.url }}/wiki/Special:Contributions/ArquiBot">contribs</a>)</td>
-      <td style="font-size: 1.8em;">{{ stats.edits }}</td>
+      <td style="font-size: 1.8em;">{{ stats.articles }}</td>
       <td style="font-size: 1.8em;">{{ stats.urls_archived }}</td>
     </tr>
     {% endfor %}

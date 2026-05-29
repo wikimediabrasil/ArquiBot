@@ -27,6 +27,15 @@ class StatisticsManagerTestCase(TestCase):
             edit_id=23456,
             title="OK 2",
         )
+        self.article_pt_ok_2_other_edit = ArticleCheck.objects.create(
+            wikipedia=self.wiki_pt,
+            edit_id=34567,
+            title="OK 2",
+        )
+        ArticleCheck.objects.filter(id=self.article_pt_ok_2_other_edit.id).update(
+            # workaround for auto_now=True
+            modified=self.now - timedelta(days=10)
+        )
         self.article_pt_noedit = ArticleCheck.objects.create(
             wikipedia=self.wiki_pt,
             edit_id=None,
@@ -59,6 +68,10 @@ class StatisticsManagerTestCase(TestCase):
             article=self.article_pt_ok_2,
             status=UrlCheck.ArchiveStatus.ARCHIVED,
         )
+        self.url_pt_ok_2_other_edit = UrlCheck.objects.create(
+            article=self.article_pt_ok_2_other_edit,
+            status=UrlCheck.ArchiveStatus.ARCHIVED,
+        )
         self.url_pt_pending = UrlCheck.objects.create(
             article=self.article_pt_ok_1,
         )
@@ -75,10 +88,20 @@ class StatisticsManagerTestCase(TestCase):
             status=UrlCheck.ArchiveStatus.ARCHIVED,
         )
 
-        self.PT_EDITS = 2
-        self.PT_URLS = 3
+        self.PT_EDITS = 3
+        self.PT_ARTICLES = 2
+        self.PT_URLS = 4
         self.ES_EDITS = 1
+        self.ES_ARTICLES = 1
         self.ES_URLS = 1
+
+    def check(self, stats_pt, stats_es):
+        self.assertEqual(stats_pt.edits, self.PT_EDITS)
+        self.assertEqual(stats_pt.articles, self.PT_ARTICLES)
+        self.assertEqual(stats_pt.urls_archived, self.PT_URLS)
+        self.assertEqual(stats_es.edits, self.ES_EDITS)
+        self.assertEqual(stats_es.articles, self.ES_ARTICLES)
+        self.assertEqual(stats_es.urls_archived, self.ES_URLS)
 
     def test_process_statistics_creates_statistics(self):
         self.assertFalse(Statistics.objects.exists())
@@ -91,10 +114,7 @@ class StatisticsManagerTestCase(TestCase):
         Statistics.objects.process_statistics()
         stats_pt = Statistics.objects.get(wikipedia=self.wiki_pt)
         stats_es = Statistics.objects.get(wikipedia=self.wiki_es)
-        self.assertEqual(stats_pt.edits, self.PT_EDITS)
-        self.assertEqual(stats_pt.urls_archived, self.PT_URLS)
-        self.assertEqual(stats_es.edits, self.ES_EDITS)
-        self.assertEqual(stats_es.urls_archived, self.ES_URLS)
+        self.check(stats_pt, stats_es)
 
     def test_process_statistics_updates_existing_statistics(self):
         stats_pt = Statistics.objects.create(
@@ -107,10 +127,7 @@ class StatisticsManagerTestCase(TestCase):
         Statistics.objects.process_statistics()
         stats_pt.refresh_from_db()
         stats_es.refresh_from_db()
-        self.assertEqual(stats_pt.edits, self.PT_EDITS)
-        self.assertEqual(stats_pt.urls_archived, self.PT_URLS)
-        self.assertEqual(stats_es.edits, self.ES_EDITS)
-        self.assertEqual(stats_es.urls_archived, self.ES_URLS)
+        self.check(stats_pt, stats_es)
 
     def test_process_statistics_timestamp_is_set(self):
         before = now()
