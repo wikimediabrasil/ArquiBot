@@ -7,6 +7,7 @@ from django.core.management.base import BaseCommand
 from django.utils.timezone import now
 
 from archivebot.utils import run_rc_date
+from stats.models import Statistics
 
 logger = logging.getLogger("arquibot")
 
@@ -27,6 +28,7 @@ class Command(BaseCommand):
                 edit_count = 0
             if self.no_more_edits(edit_count):
                 logger.info("no more edits to be made...")
+                self.stats()
                 self.wait_until_tomorrow()
             else:
                 logger.info(f"made {edit_count} edits, continuing...")
@@ -47,3 +49,6 @@ class Command(BaseCommand):
             time.sleep(wait_sec)
         else:
             logger.info(f"already reached '{next_day_6am}', not waiting...")
+
+    def stats(self):
+        Statistics.objects.process_statistics()
