@@ -18,8 +18,9 @@ class StatisticsManager(models.Manager):
         """
         Process and update statistics for all Wikipedias.
         """
+        logger.info("processing statistics...")
         for wikipedia in Wikipedia.objects.all():
-            logger.info(f"{wikipedia} stats...")
+            logger.debug(f"stats: [{wikipedia}]...")
             point_in_time = now() if point_in_time is None else point_in_time
             stats, created = self.get_or_create(wikipedia=wikipedia)
 
