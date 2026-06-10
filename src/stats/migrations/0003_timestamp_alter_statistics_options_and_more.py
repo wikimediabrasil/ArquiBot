@@ -11,6 +11,10 @@ def leave_unique_statistics(apps, schema_editor):
     ts = Timestamp.objects.first()
     Statistics.objects.using(db_alias).exclude(timestamp=ts).delete()
 
+def delete_stats(apps, schema_editor):
+    db_alias = schema_editor.connection.alias
+    Statistics = apps.get_model("stats", "Statistics")
+    Statistics.objects.using(db_alias).all().delete()
 
 class Migration(migrations.Migration):
 
@@ -20,6 +24,10 @@ class Migration(migrations.Migration):
     ]
 
     operations = [
+        migrations.RunPython(
+            code=delete_stats,
+            reverse_code=migrations.RunPython.noop,
+        ),
         migrations.CreateModel(
             name='Timestamp',
             fields=[
