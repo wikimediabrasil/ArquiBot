@@ -192,3 +192,18 @@ class StatisticsManagerTestCase(TestCase):
         self.assertNotIn("statistics", response.context)
         self.assertNotIn("timestamp", response.context)
         self.assertNotIn("Global statistics", response.text)
+
+    def test_stats_view(self):
+        ts = self.timestamp
+        Statistics.objects.process_statistics(timestamp=ts)
+        stats_pt = Statistics.objects.get(wikipedia=self.wiki_pt)
+        stats_es = Statistics.objects.get(wikipedia=self.wiki_es)
+        response = self.client.get(reverse("stats", args=[ts.id]))
+        self.assertEqual(response.status_code, 200)
+        statistics = response.context["statistics"]
+        self.assertEqual(statistics.count(), 2)
+        self.assertIn(stats_pt, statistics)
+        self.assertIn(stats_es, statistics)
+        self.assertEqual(ts, response.context["timestamp"])
+        self.assertIn("Global statistics", response.text)
+        self.assertIn("contribs", response.text)

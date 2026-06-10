@@ -10,20 +10,30 @@ from stats.models import Statistics
 from stats.models import Timestamp
 
 
+def _stats_data(timestamp):
+    statistics = (
+        Statistics.objects.filter(timestamp=timestamp)
+        .exclude(edits=0)
+        .exclude(wikipedia__code="test")
+    )
+    return {
+        "statistics": statistics,
+        "timestamp": timestamp,
+    }
+
+
 def home(request):
     data = {}
     timestamp = Timestamp.objects.order_by("-datetime").first()
     if timestamp:
-        statistics = (
-            Statistics.objects.filter(timestamp=timestamp)
-            .exclude(edits=0)
-            .exclude(wikipedia__code="test")
-        )
-        data = {
-            "statistics": statistics,
-            "timestamp": timestamp,
-        }
-    return render(request, "home.html", data)
+        data = _stats_data(timestamp)
+    return render(request, "stats.html", data)
+
+
+def stats(request, id):
+    timestamp = Timestamp.objects.get(id=id)
+    data = _stats_data(timestamp)
+    return render(request, "stats.html", data)
 
 
 def logs(request):
