@@ -7,17 +7,22 @@ from django.utils.timezone import now
 
 from archivebot.models import UrlCheck
 from stats.models import Statistics
+from stats.models import Timestamp
 
 
 def home(request):
-    statistics = (
-        Statistics.objects.all().exclude(edits=0).exclude(wikipedia__code="test")
-    )
-    timestamp = statistics.first().timestamp
-    data = {
-        "statistics": statistics,
-        "timestamp": timestamp,
-    }
+    data = {}
+    timestamp = Timestamp.objects.order_by("-datetime").first()
+    if timestamp:
+        statistics = (
+            Statistics.objects.filter(timestamp=timestamp)
+            .exclude(edits=0)
+            .exclude(wikipedia__code="test")
+        )
+        data = {
+            "statistics": statistics,
+            "timestamp": timestamp,
+        }
     return render(request, "home.html", data)
 
 

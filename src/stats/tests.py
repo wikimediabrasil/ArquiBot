@@ -2,12 +2,15 @@ from datetime import timedelta
 
 from django.test import TestCase
 from django.utils.timezone import now
+from django.core.management import call_command
+from django.urls import reverse
 
 from archivebot.models import Wikipedia
 from archivebot.models import ArticleCheck
 from archivebot.models import UrlCheck
 
 from .models import Statistics
+from .models import Timestamp
 
 
 class StatisticsManagerTestCase(TestCase):
@@ -15,7 +18,6 @@ class StatisticsManagerTestCase(TestCase):
         Wikipedia.objects.all().delete()
         self.wiki_pt, _ = Wikipedia.objects.get_or_create(code="pt")
         self.wiki_es, _ = Wikipedia.objects.get_or_create(code="es")
-        self.now = now()
 
         self.article_pt_ok_1 = ArticleCheck.objects.create(
             wikipedia=self.wiki_pt,
@@ -34,7 +36,7 @@ class StatisticsManagerTestCase(TestCase):
         )
         ArticleCheck.objects.filter(id=self.article_pt_ok_2_other_edit.id).update(
             # workaround for auto_now=True
-            modified=self.now - timedelta(days=10)
+            modified=now() - timedelta(days=10)
         )
         self.article_pt_noedit = ArticleCheck.objects.create(
             wikipedia=self.wiki_pt,
@@ -48,7 +50,7 @@ class StatisticsManagerTestCase(TestCase):
         )
         ArticleCheck.objects.filter(id=self.article_pt_future.id).update(
             # workaround for auto_now=True
-            modified=self.now + timedelta(days=1)
+            modified=now() + timedelta(days=1)
         )
         self.article_es = ArticleCheck.objects.create(
             wikipedia=self.wiki_es,
@@ -88,6 +90,8 @@ class StatisticsManagerTestCase(TestCase):
             status=UrlCheck.ArchiveStatus.ARCHIVED,
         )
 
+        self.timestamp = Timestamp.objects.create(datetime=now())
+
         self.PT_EDITS = 3
         self.PT_ARTICLES = 2
         self.PT_URLS = 4
@@ -116,17 +120,41 @@ class StatisticsManagerTestCase(TestCase):
         stats_es = Statistics.objects.get(wikipedia=self.wiki_es)
         self.check(stats_pt, stats_es)
 
+    def test_process_statistics_command(self):
+        call_command("stats")
+        stats_pt = Statistics.objects.get(wikipedia=self.wiki_pt)
+        stats_es = Statistics.objects.get(wikipedia=self.wiki_es)
+        self.check(stats_pt, stats_es)
+
     def test_process_statistics_updates_existing_statistics(self):
+        ts = self.timestamp
         stats_pt = Statistics.objects.create(
-            wikipedia=self.wiki_pt, edits=0, urls_archived=0
+            wikipedia=self.wiki_pt, edits=0, urls_archived=0, timestamp=ts
         )
         stats_es = Statistics.objects.create(
-            wikipedia=self.wiki_es, edits=0, urls_archived=0
+            wikipedia=self.wiki_es, edits=0, urls_archived=0, timestamp=ts
         )
         self.assertEqual(Statistics.objects.count(), 2)
-        Statistics.objects.process_statistics()
+        Statistics.objects.process_statistics(timestamp=ts)
+        self.assertEqual(Statistics.objects.count(), 2)
         stats_pt.refresh_from_db()
         stats_es.refresh_from_db()
+        self.check(stats_pt, stats_es)
+
+    def test_process_statistics_creates_new_statistics(self):
+        ts = self.timestamp
+        stats_pt = Statistics.objects.create(
+            wikipedia=self.wiki_pt, edits=0, urls_archived=0, timestamp=ts
+        )
+        stats_es = Statistics.objects.create(
+            wikipedia=self.wiki_es, edits=0, urls_archived=0, timestamp=ts
+        )
+        self.assertEqual(Statistics.objects.count(), 2)
+        ts = Timestamp.objects.create(datetime=now() + timedelta(minutes=5))
+        Statistics.objects.process_statistics(timestamp=ts)
+        self.assertEqual(Statistics.objects.count(), 4)
+        stats_pt = Statistics.objects.get(wikipedia=self.wiki_pt, timestamp=ts)
+        stats_es = Statistics.objects.get(wikipedia=self.wiki_es, timestamp=ts)
         self.check(stats_pt, stats_es)
 
     def test_process_statistics_timestamp_is_set(self):
@@ -134,11 +162,33 @@ class StatisticsManagerTestCase(TestCase):
         Statistics.objects.process_statistics()
         after = now()
         stats_pt = Statistics.objects.get(wikipedia=self.wiki_pt)
-        self.assertGreaterEqual(stats_pt.timestamp, before)
-        self.assertLessEqual(stats_pt.timestamp, after)
+        self.assertGreaterEqual(stats_pt.timestamp.datetime, before)
+        self.assertLessEqual(stats_pt.timestamp.datetime, after)
 
     def test_process_statistics_empty_wikipedia(self):
         Wikipedia.objects.all().delete()
-        Statistics.objects.all().delete()
         Statistics.objects.process_statistics()
         self.assertEqual(Statistics.objects.count(), 0)
+
+    def test_home_view_includes_valid_statistics(self):
+        Statistics.objects.process_statistics()
+        stats_pt = Statistics.objects.get(wikipedia=self.wiki_pt)
+        stats_es = Statistics.objects.get(wikipedia=self.wiki_es)
+        response = self.client.get(reverse("home"))
+        self.assertEqual(response.status_code, 200)
+        statistics = response.context["statistics"]
+        self.assertEqual(statistics.count(), 2)
+        self.assertIn(stats_pt, statistics)
+        self.assertIn(stats_es, statistics)
+        timestamp = response.context["timestamp"]
+        self.assertEqual(timestamp, stats_pt.timestamp)
+        self.assertIn("Global statistics", response.text)
+        self.assertIn("contribs", response.text)
+
+    def test_home_view_empty(self):
+        Timestamp.objects.all().delete()
+        response = self.client.get(reverse("home"))
+        self.assertEqual(response.status_code, 200)
+        self.assertNotIn("statistics", response.context)
+        self.assertNotIn("timestamp", response.context)
+        self.assertNotIn("Global statistics", response.text)

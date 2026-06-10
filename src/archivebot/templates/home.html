@@ -4,8 +4,9 @@
 
 {% block content %}
 
+{% if timestamp %}
 <h2>Global statistics</h2>
-<p style="text-align: center; font-size: 0.9em;">({{ timestamp }})</p>
+<p style="text-align: center; font-size: 0.9em;">({{ timestamp.datetime }})</p>
 
 <table>
   <thead>
@@ -25,5 +26,6 @@
     {% endfor %}
   </tbody>
 </table>
+{% endif %}
 
 {% endblock content %}
