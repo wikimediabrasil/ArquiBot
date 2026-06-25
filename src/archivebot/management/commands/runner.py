@@ -23,12 +23,12 @@ class Command(BaseCommand):
             yesterday = self.yesterday()
             try:
                 edit_count = run_rc_date(yesterday, stop_at_edit_count=self.EDIT_COUNT)
+                self.stats()
             except Exception as e:
                 logger.error(f"error for {yesterday} Recent Changes: {e}")
                 edit_count = 0
             if self.no_more_edits(edit_count):
                 logger.info("no more edits to be made...")
-                self.stats()
                 self.wait_until_tomorrow()
             else:
                 logger.info(f"made {edit_count} edits, continuing...")
