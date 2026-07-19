@@ -6,6 +6,7 @@ from django.utils import timezone
 from django.utils.timezone import now
 
 from archivebot.models import UrlCheck
+from archivebot.models import Wikipedia
 from stats.models import Statistics
 from stats.models import Timestamp
 
@@ -19,15 +20,13 @@ def _stats_data(timestamp):
     return {
         "statistics": statistics,
         "timestamp": timestamp,
-    }
-
-
 def home(request):
-    data = {}
-    timestamp = Timestamp.objects.order_by("-datetime").first()
-    if timestamp:
-        data = _stats_data(timestamp)
-    return render(request, "stats.html", data)
+    wikipedias = Wikipedia.objects.exclude(code="test").all()
+    data = {
+        "wikipedias": wikipedias,
+    }
+    return render(request, "home.html", data)
+
 
 
 def stats(request, id):

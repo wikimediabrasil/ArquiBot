@@ -4,27 +4,20 @@
 
 {% block content %}
 
-{% if timestamp %}
-<h2>Global statistics</h2>
-<p style="text-align: center; font-size: 0.9em;">
-  {{ timestamp.datetime }}
-  (<a href="{% url id=timestamp.id %}">link</a>)
-</p>
-
+{% if wikipedias %}
+<h2>Activated Wikipedias</h2>
 <table>
   <thead>
     <tr>
       <th>Wikipedia</th>
-      <th>Articles edited</th>
-      <th>URLs archived</th>
+      <th>User</th>
     </tr>
   </thead>
   <tbody id="stats-body">
-    {% for stats in statistics %}
+    {% for wikipedia in wikipedias %}
     <tr>
-      <td style="font-size: 1.4em;">{{ stats.wikipedia.code }} (<a href="{{ stats.wikipedia.url }}/wiki/Special:Contributions/ArquiBot">contribs</a>)</td>
-      <td style="font-size: 1.8em;">{{ stats.articles }}</td>
-      <td style="font-size: 1.8em;">{{ stats.urls_archived }}</td>
+      <td style="font-size: 1.30em;"> <a href="{{ wikipedia.url }}">{{ wikipedia.code }}.wikipedia.org</a></td>
+      <td style="font-size: 1.15em;"><a href="{{ wikipedia.url }}/wiki/User:ArquiBot">User:ArquiBot</a> (<a href="{{ wikipedia.url }}/wiki/User talk:ArquiBot">talk</a> | <a href="{{ wikipedia.url }}/wiki/Special:Contributions/ArquiBot">contribs</a>)</td>
     </tr>
     {% endfor %}
   </tbody>
