@@ -4,13 +4,16 @@
 
 {% block content %}
 
-{% if timestamp %}
 <h2>Global statistics</h2>
-<p style="text-align: center; font-size: 0.9em;">
-  {{ timestamp.datetime }}
-  (<a href="{% url 'stats' id=timestamp.id %}">link</a>)
-</p>
+{% if date_fmt %}
+<form method="get">
+<label for="date-filter">Filter by date (UTC):</label>
+<input type="date" name="date" id="date-filter" value="{{ date_fmt }}" onchange="this.form.submit()">
+</form>
+<p style="text-align: center; font-size: 0.9em;"> {{ timestamp.datetime }} </p>
+{% endif %}
 
+{% if statistics %}
 <table>
   <thead>
     <tr>
@@ -29,6 +32,8 @@
     {% endfor %}
   </tbody>
 </table>
+{% else %}
+<h3 style="text-align: center;">Statistics not found</h3>
 {% endif %}
 
 {% endblock content %}

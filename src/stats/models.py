@@ -1,9 +1,14 @@
 import logging
+from datetime import time
+from datetime import datetime
+from datetime import timedelta
+from datetime import UTC
 
 from django.db import models
 from django.db.models import Count
 from django.db.models import UniqueConstraint
 from django.utils.timezone import now
+from django.utils import timezone
 
 from archivebot.models import Wikipedia
 from archivebot.models import ArticleCheck
@@ -13,25 +18,62 @@ from archivebot.models import UrlCheck
 logger = logging.getLogger("arquibot")
 
 
+class TimestampManager(models.Manager):
+    def yesterday_23_59_utc(self):
+        today_utc = now().astimezone(UTC).date()
+        yesterday = today_utc - timedelta(days=1)
+        dt = timezone.make_aware(datetime.combine(yesterday, time.max))
+        timestamp, _ = self.get_or_create(datetime=dt)
+        return timestamp
+
+    def of_date_fmt(self, date_fmt):
+        date = datetime.strptime(date_fmt, "%Y-%m-%d")
+        return self.of_date(date)
+
+    def of_date(self, date):
+        return (
+            Timestamp.objects.filter(
+                datetime__date=date,
+            )
+            .order_by("-datetime")
+            .first()
+        )
+
+
 class Timestamp(models.Model):
+    objects = TimestampManager()
+
     datetime = models.DateTimeField(unique=True)
 
     def __str__(self):
         return f"[{self.datetime}] timestamp"
+
+    @property
+    def date(self):
+        return self.datetime.date()
+
+    @property
+    def date_fmt(self):
+        return self.date.strftime("%Y-%m-%d")
 
     class Meta:
         ordering = ("-datetime",)
 
 
 class StatisticsManager(models.Manager):
-    """Custom manager for AllTimeStatistics."""
-
     def process_statistics(self, timestamp=None):
+        if timestamp is None:
+            timestamp, _ = Timestamp.objects.get_or_create(datetime=now())
+        return self.process_at(timestamp)
+
+    def process_yesterday(self):
+        timestamp = Timestamp.objects.yesterday_23_59_utc()
+        return self.process_at(timestamp)
+
+    def process_at(self, timestamp):
         """
         Process and update statistics for all Wikipedias.
         """
-        if timestamp is None:
-            timestamp, _ = Timestamp.objects.get_or_create(datetime=now())
         logger.info(f"processing statistics: {timestamp}...")
         for wikipedia in Wikipedia.objects.all():
             logger.debug(f"stats: [{wikipedia}]...")
@@ -59,6 +101,13 @@ class StatisticsManager(models.Manager):
             ).count()
 
             stats.save()
+
+    def of_timestamp(self, timestamp: Timestamp):
+        return (
+            Statistics.objects.filter(timestamp=timestamp)
+            .exclude(edits=0)
+            .exclude(wikipedia__code="test")
+        )
 
 
 class Statistics(models.Model):

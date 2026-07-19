@@ -51,4 +51,4 @@ class Command(BaseCommand):
             logger.info(f"already reached '{next_day_6am}', not waiting...")
 
     def stats(self):
-        Statistics.objects.process_statistics()
+        Statistics.objects.process_yesterday()

@@ -157,13 +157,20 @@ class StatisticsManagerTestCase(TestCase):
         stats_es = Statistics.objects.get(wikipedia=self.wiki_es, timestamp=ts)
         self.check(stats_pt, stats_es)
 
-    def test_process_statistics_timestamp_is_set(self):
-        before = now()
-        Statistics.objects.process_statistics()
+    def test_process_statistics_timestamp_yesterday(self):
+        before = now() - timedelta(days=1)
+        Statistics.objects.process_yesterday()
         after = now()
         stats_pt = Statistics.objects.get(wikipedia=self.wiki_pt)
+        stats_es = Statistics.objects.get(wikipedia=self.wiki_es)
         self.assertGreaterEqual(stats_pt.timestamp.datetime, before)
         self.assertLessEqual(stats_pt.timestamp.datetime, after)
+        self.assertEqual(stats_pt.edits, 1)
+        self.assertEqual(stats_pt.articles, 1)
+        self.assertEqual(stats_pt.urls_archived, 1)
+        self.assertEqual(stats_es.edits, 0)
+        self.assertEqual(stats_es.articles, 0)
+        self.assertEqual(stats_es.urls_archived, 0)
 
     def test_process_statistics_empty_wikipedia(self):
         Wikipedia.objects.all().delete()
@@ -171,10 +178,10 @@ class StatisticsManagerTestCase(TestCase):
         self.assertEqual(Statistics.objects.count(), 0)
 
     def test_home_view_includes_valid_statistics(self):
-        Statistics.objects.process_statistics()
+        Statistics.objects.process_statistics(timestamp=self.timestamp)
         stats_pt = Statistics.objects.get(wikipedia=self.wiki_pt)
         stats_es = Statistics.objects.get(wikipedia=self.wiki_es)
-        response = self.client.get(reverse("home"))
+        response = self.client.get(reverse("stats"))
         self.assertEqual(response.status_code, 200)
         statistics = response.context["statistics"]
         self.assertEqual(statistics.count(), 2)
@@ -187,18 +194,16 @@ class StatisticsManagerTestCase(TestCase):
 
     def test_home_view_empty(self):
         Timestamp.objects.all().delete()
-        response = self.client.get(reverse("home"))
-        self.assertEqual(response.status_code, 200)
-        self.assertNotIn("statistics", response.context)
-        self.assertNotIn("timestamp", response.context)
-        self.assertNotIn("Global statistics", response.text)
+        response = self.client.get(reverse("stats"))
+        self.assertEqual(response.status_code, 404)
+        self.assertIn("not found", response.text)
 
     def test_stats_view(self):
         ts = self.timestamp
         Statistics.objects.process_statistics(timestamp=ts)
         stats_pt = Statistics.objects.get(wikipedia=self.wiki_pt)
         stats_es = Statistics.objects.get(wikipedia=self.wiki_es)
-        response = self.client.get(reverse("stats", args=[ts.id]))
+        response = self.client.get(reverse("stats", query={"date": stats_pt.timestamp.date_fmt}))
         self.assertEqual(response.status_code, 200)
         statistics = response.context["statistics"]
         self.assertEqual(statistics.count(), 2)

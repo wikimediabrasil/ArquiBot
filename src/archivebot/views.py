@@ -11,15 +11,6 @@ from stats.models import Statistics
 from stats.models import Timestamp
 
 
-def _stats_data(timestamp):
-    statistics = (
-        Statistics.objects.filter(timestamp=timestamp)
-        .exclude(edits=0)
-        .exclude(wikipedia__code="test")
-    )
-    return {
-        "statistics": statistics,
-        "timestamp": timestamp,
 def home(request):
     wikipedias = Wikipedia.objects.exclude(code="test").all()
     data = {
@@ -28,11 +19,25 @@ def home(request):
     return render(request, "home.html", data)
 
 
+def stats(request):
+    request_date = request.GET.get("date")
+    date = None
+    if request_date:
+        date = datetime.strptime(request_date, "%Y-%m-%d")
+        timestamp = Timestamp.objects.of_date(date)
+    else:
+        timestamp = Timestamp.objects.order_by("-datetime").first()
+        if timestamp:
+            date = timestamp.date
 
-def stats(request, id):
-    timestamp = Timestamp.objects.get(id=id)
-    data = _stats_data(timestamp)
-    return render(request, "stats.html", data)
+    statistics = Statistics.objects.of_timestamp(timestamp)
+    data = {
+        "timestamp": timestamp,
+        "statistics": statistics,
+        "date_fmt": date.strftime("%Y-%m-%d") if date else None,
+    }
+    status = 404 if timestamp is None else 200
+    return render(request, "stats.html", data, status=status)
 
 
 def logs(request):
