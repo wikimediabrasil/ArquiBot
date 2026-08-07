@@ -13,32 +13,26 @@
     <tr>
       <th>Wikipedia</th>
       <th>Article</th>
-      <th>URL</th>
-      <th>Status</th>
       <th>Timestamp</th>
       <th>Edit</th>
+      <th>URLs</th>
     </tr>
   </thead>
   <tbody id="stats-body">
-    {% for url in urls %}
-    {% with url.article.wikipedia as wikipedia %}
+    {% for article in articles %}
+    {% with article.wikipedia as wikipedia %}
     <tr>
       <td><a href="{{ wikipedia.url}}">{{ wikipedia.code }}</a></td>
-      <td><a href="{{ url.article.url}}">{{ url.article.title }}</a></td>
-      <td style="word-wrap: break-word; max-width: 500px"><a href="{{ url.url}}">{{ url.url }}</a></td>
+      <td><a href="{{ article.url}}">{{ article.title }}</a></td>
+      <td>{{ article.modified }}</td>
       <td>
-        {% if url.archive_url %}
-        <a href="{{ url.archive_url}}">{{ url.get_status_display }}</a>
+        {% if article.edit_id %}
+        <a href="{{ article.edit_url}}">{{ article.edit_id }}</a>
         {% else %}
-        {{ url.get_status_display }}
+        -
         {% endif %}
       </td>
-      <td>{{ url.modified }}</td>
-      <td>
-        {% if url.article.edit_id and url.archive_url %}
-        <a href="{{ url.article.edit_url}}">{{ url.article.edit_id }}</a>
-        {% endif %}
-      </td>
+      <td> <a href="{% url 'logs_article' id=article.id %}">URLs</a> </td>
     </tr>
     {% endwith %}
     {% endfor %}

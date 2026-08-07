@@ -5,6 +5,7 @@ from django.shortcuts import render
 from django.utils import timezone
 from django.utils.timezone import now
 
+from archivebot.models import ArticleCheck
 from archivebot.models import UrlCheck
 from archivebot.models import Wikipedia
 from stats.models import Statistics
@@ -50,16 +51,29 @@ def logs(request):
     start = timezone.make_aware(datetime.combine(date, time.min))
     end = timezone.make_aware(datetime.combine(date, time.max))
 
-    urls = (
-        UrlCheck.objects.filter(created__gte=start, created__lte=end)
-        .select_related("article__wikipedia")
+    articles = (
+        ArticleCheck.objects.filter(created__gte=start, created__lte=end)
+        .select_related("wikipedia")
         .order_by("-modified")
     )
-
     data = {
         "date": date,
         "date_fmt": date.strftime("%Y-%m-%d"),
+        "articles": articles,
+    }
+    return render(request, "logs.html", data)
+
+
+def logs_article(request, id):
+    article = ArticleCheck.objects.filter(id=id).first()
+    urls = (
+        UrlCheck.objects.filter(article=article)
+        .select_related("article__wikipedia")
+        .order_by("-modified")
+    ) if article else []
+    data = {
+        "article": article,
         "urls": urls,
     }
-
-    return render(request, "logs.html", data)
+    status = 404 if article is None else 200
+    return render(request, "logs_article.html", data, status=status)

@@ -1,0 +1,49 @@
+{% extends "layout.html" %}
+
+{% block pagetitle %}ArquiBot - Logs{% if article %} - {{ article.title }}{% endif %}{% endblock pagetitle %}
+
+{% block content %}
+{% if not article %}
+<h2>Not Found</h2>
+{% else %}
+<h2>Logs of: {{ article.title }}</h2>
+<p>
+<ul>
+<li><a href="{{ article.url}}">{{ article.url }}</a></li>
+<li>{{ article.modified }}</li>
+{% if article.edit_id %}
+<li> Edit: <a href="{{ article.edit_url}}">{{ article.edit_id }}</a> </li>
+{% endif %}
+</ul>
+</p>
+
+{% if urls %}
+<table>
+  <thead>
+    <tr>
+      <th>URL</th>
+      <th>Status</th>
+      <th>Timestamp</th>
+    </tr>
+  </thead>
+  <tbody id="stats-body">
+    {% for url in urls %}
+    <tr>
+      <td style="word-wrap: break-word; max-width: 500px"><a href="{{ url.url}}">{{ url.url }}</a></td>
+      <td>
+        {% if url.archive_url %}
+        <a href="{{ url.archive_url}}">{{ url.get_status_display }}</a>
+        {% else %}
+        {{ url.get_status_display }}
+        {% endif %}
+      </td>
+      <td>{{ url.modified }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p style="text-align: center;">No URLs found.</p>
+{% endif %}
+{% endif %}
+{% endblock content %}
