@@ -258,6 +258,9 @@ def update_archived_templates_in_article(article: ArticleCheck, archived_url_map
     if not changed:
         return False, "No archived templates were applied. Article unchanged."
 
+    if len(str(wikicode)) < len(wikitext):
+        return False, "Should not remove content"
+
     # Step 4: Commit updated wikitext back to Wikipedia
     count = len(urls_archived)
     word = "URLs" if count > 1 else "URL"
