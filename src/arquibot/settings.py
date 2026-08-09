@@ -24,14 +24,6 @@ USER_AGENT = os.environ["USER_AGENT"]
 REQUEST_TIMEOUT = int(os.getenv("REQUEST_TIMEOUT", 15))
 LAST_HOURS = int(os.getenv("LAST_HOURS", 1))
 
-SKIPPED_URL_PREFIXES = [
-    "http://web.archive.org",
-    "https://web.archive.org",
-    "https://doi.org",
-    "http://doi.org",
-    "https://dx.doi.org"
-]
-
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent

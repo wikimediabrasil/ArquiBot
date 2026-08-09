@@ -25,6 +25,7 @@ from archivebot.utils import (
 from archivebot.archiving import ArchivedURL
 from archivebot.models import Wikipedia
 from archivebot.models import ArticleCheck
+from archivebot.models import UrlCheck
 
 def archive_url(url):
     arq = ArchivedURL(url)
@@ -573,3 +574,56 @@ class ArticleCheckTests(TestCase):
         self.assertEqual(checker.recent_check().id, past_check.id)
         past_check.delete()
         self.assertIsNone(checker.recent_check())
+
+class UrlCheckTests(TestCase):
+    def setUp(self):
+        self.wikipedia, _ = Wikipedia.objects.get_or_create(code="test")
+        self.article = self.get_article("Test Page")
+
+    def get_article(self, title):
+        article = ArticleCheck.objects.create(wikipedia=self.wikipedia, title=title)
+        return article
+
+    def test_ignore(self):
+        check: UrlCheck = UrlCheck.objects.create(
+            article=self.article,
+            url="https://pt.wikipedia.org/wiki/Lancheria_do_Parque",
+        )
+        self.assertTrue(check.verify_ignored_and_set())
+        self.assertEqual(check.status, check.ArchiveStatus.IGNORED_WIKIMEDIA)
+        check: UrlCheck = UrlCheck.objects.create(
+            article=self.article,
+            url="http://commons.wikimedia.org/wiki/File:Cais_Mau%C3%A1_by_Renato_Soares_(edited).jpg",
+        )
+        self.assertTrue(check.verify_ignored_and_set())
+        self.assertEqual(check.status, check.ArchiveStatus.IGNORED_WIKIMEDIA)
+        check: UrlCheck = UrlCheck.objects.create(
+            article=self.article,
+            url="https://wikipedia.org/",
+        )
+        self.assertTrue(check.verify_ignored_and_set())
+        self.assertEqual(check.status, check.ArchiveStatus.IGNORED_WIKIMEDIA)
+        check: UrlCheck = UrlCheck.objects.create(
+            article=self.article,
+            url="https://doi.org/10.47749/T/UNICAMP.2010.477515",
+        )
+        self.assertTrue(check.verify_ignored_and_set())
+        self.assertEqual(check.status, check.ArchiveStatus.IGNORED_PERMALINK)
+        check: UrlCheck = UrlCheck.objects.create(
+            article=self.article,
+            url="https://www.random.org/integers/",
+        )
+        self.assertFalse(check.verify_ignored_and_set())
+        self.assertEqual(check.status, check.ArchiveStatus.RUNNING)
+        check: UrlCheck = UrlCheck.objects.create(
+            article=self.article,
+            url="http://iamnotwikipedia.org",
+        )
+        self.assertFalse(check.verify_ignored_and_set())
+        self.assertEqual(check.status, check.ArchiveStatus.RUNNING)
+        check: UrlCheck = UrlCheck.objects.create(
+            article=self.article,
+            url="i am not a url",
+        )
+        self.assertFalse(check.verify_ignored_and_set())
+        self.assertEqual(check.status, check.ArchiveStatus.RUNNING)

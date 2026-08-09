@@ -19,7 +19,6 @@ from archivebot.models import UrlCheck
 from archivebot.models import RecentChanges
 from archivebot.models import Diff
 
-SKIPPED_URL_PREFIXES = settings.SKIPPED_URL_PREFIXES
 LAST_HOURS = settings.LAST_HOURS
 REQUEST_TIMEOUT = settings.REQUEST_TIMEOUT
 USER_AGENT = settings.USER_AGENT
@@ -314,9 +313,7 @@ def archived_url_map_from_wikitext(initial_archived_url_map, wikitext, article: 
             article=article,
             url=url,
         )
-        if any([url.lower().startswith(prefix) for prefix in SKIPPED_URL_PREFIXES]):
-            logger.info(f"{check} skipping DOI or archived URL: {url}")
-            check.set_ignored_permalink()
+        if check.verify_ignored_and_set():
             continue
 
         if url in processed_urls:

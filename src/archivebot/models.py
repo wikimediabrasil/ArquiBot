@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from datetime import timedelta
 from urllib.parse import quote
+from urllib.parse import urlparse
 
 import requests
 from django.db import models
@@ -213,6 +214,21 @@ class ArticleCheck(models.Model):
 
 
 class UrlCheck(models.Model):
+    PERMALINK_DOMAINS = [
+        "web.archive.org",
+        "doi.org",
+        "memoria.bn.gov.br",
+    ]
+
+    WIKIMEDIA_DOMAINS = [
+        "wikimedia.org",
+        "wikipedia.org",
+        "wikidata.org",
+        "wiktionary.org",
+        "wikiversity.org",
+        "wikiquote.org",
+    ]
+
     article = models.ForeignKey(
         ArticleCheck,
         on_delete=models.CASCADE,
@@ -241,6 +257,10 @@ class UrlCheck(models.Model):
             "ignored_archived",
             pgettext_lazy("url-status-ignored-archived", "URL already archived"),
         )
+        IGNORED_WIKIMEDIA = (
+            "ignored_wikimedia",
+            pgettext_lazy("url-status-ignored-wikimedia", "Wikimedia URL ignored"),
+        )
 
     status = models.CharField(
         max_length=32,
@@ -257,9 +277,24 @@ class UrlCheck(models.Model):
         article = self.article
         return f"{article} [{self.url}] [{self.status}]"
 
-    def set_ignored_permalink(self):
-        self.status = self.ArchiveStatus.IGNORED_PERMALINK
-        self.save()
+    def _domain_match(self, hostname, domain):
+        return hostname == domain or hostname.endswith("." + domain)
+
+    def _domain_matches(self, hostname, domains):
+        return any(self._domain_match(hostname, d) for d in domains)
+
+    def verify_ignored_and_set(self) -> bool:
+        hostname = urlparse(self.url).hostname or ""
+        if self._domain_matches(hostname, self.PERMALINK_DOMAINS):
+            logger.info(f"{self} skipping DOI or archived URL: {self.url}")
+            self.status = self.ArchiveStatus.IGNORED_PERMALINK
+            self.save()
+            return True
+        if self._domain_matches(hostname, self.WIKIMEDIA_DOMAINS):
+            self.status = self.ArchiveStatus.IGNORED_WIKIMEDIA
+            self.save()
+            return True
+        return False
 
     def set_ignored_archived(self):
         self.status = self.ArchiveStatus.IGNORED_ARCHIVED
