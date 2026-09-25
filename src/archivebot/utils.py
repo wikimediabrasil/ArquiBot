@@ -214,7 +214,14 @@ def update_archived_templates_in_article(article: ArticleCheck, archived_url_map
     if not hasattr(archived_url_map, "values") or not archived_url_map.values():
         return False, "no templates to update"
 
-    page_data = article.page_data()
+    try:
+        page_data = article.page_data()
+    except requests.HTTPError as e:
+        if e.response is not None and e.response.status_code == 404:
+            logger.info(f"{article} page deleted")
+            return False, "page deleted or does not exist"
+        raise
+
     wikitext = page_data.get("source", "")
     latest_id = page_data.get("latest", {}).get("id")
     if not wikitext or not latest_id:

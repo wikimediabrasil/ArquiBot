@@ -437,6 +437,19 @@ class TestUtils(TestCase):
         self.assertFalse(success)
         self.assertIn("Article unchanged", msg)
 
+    @requests_mock.Mocker()
+    def test_update_archived_templates_in_article_page_deleted_404(self, mocker):
+        mocker.get(
+            self.article._page_endpoint(),
+            status_code=404,
+        )
+        archived_map = {
+            "https://example.com": "http://web.archive.org/web/20250115032356/https://example.com/"
+        }
+        success, msg = update_archived_templates_in_article(self.article, archived_map)
+        self.assertFalse(success)
+        self.assertIn("deleted", msg)
+
 
 class ArchivedURLTests(TestCase):
     def mock_availability(self, mocker, data: dict):
